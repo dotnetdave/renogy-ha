@@ -38,8 +38,11 @@ class DeviceType(Enum):
 DEVICE_TYPES = [e.value for e in DeviceType]
 DEFAULT_DEVICE_TYPE = DeviceType.CONTROLLER.value
 
-# List of fully supported device types (currently only controller)
-SUPPORTED_DEVICE_TYPES = [DeviceType.CONTROLLER.value]
+# List of fully supported device types
+SUPPORTED_DEVICE_TYPES = [
+    DeviceType.CONTROLLER.value,
+    DeviceType.SHUNT.value,
+]
 
 # BLE Characteristics and Service UUIDs
 RENOGY_READ_CHAR_UUID = (
