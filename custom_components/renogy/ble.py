@@ -596,9 +596,23 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                             metrics = parse_shunt_packet(bytes(manu))
                             self.device.parsed_data = metrics
                             LOGGER.debug("Parsed SmartShunt data: %s", metrics)
+
+                            # Update coordinator data if successful
+                            self.data = dict(self.device.parsed_data)
+                            self.logger.debug(
+                                "Updated coordinator data: %s", self.data
+                            )
+
+                            # Update device availability
+                            self.device.update_availability(True, None)
+                            self.last_update_success = True
                             return True
                         except ValueError:
                             LOGGER.warning("Invalid Shunt packet: %s", manu)
+
+                    self.device.update_availability(False, Exception("Invalid packet"))
+                    self.last_update_success = False
+
                     return False
 
                 # Use bleak-retry-connector for more robust connection
