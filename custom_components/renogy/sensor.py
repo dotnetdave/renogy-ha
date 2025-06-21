@@ -36,6 +36,15 @@ from .const import (
     DOMAIN,
     LOGGER,
     RENOGY_BT_PREFIX,
+    RENOGY_NAME_PREFIXES,
+    DeviceType,
+    KEY_SHUNT_BUS_VOLTAGE,
+    KEY_SHUNT_SHUNT_DROP,
+    KEY_SHUNT_CURRENT,
+    KEY_SHUNT_CONSUMED_AH,
+    KEY_SHUNT_STATE_OF_CHARGE,
+    KEY_SHUNT_TEMPERATURE,
+    KEY_SHUNT_EXTRA_FLAGS,
 )
 
 # Registry of sensor keys
@@ -267,6 +276,63 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
     ),
 )
 
+SHUNT_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_BUS_VOLTAGE,
+        name="Bus Voltage",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_BUS_VOLTAGE),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_SHUNT_DROP,
+        name="Shunt Drop",
+        native_unit_of_measurement="mV",
+        device_class=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_SHUNT_DROP),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_CURRENT,
+        name="Current",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_CURRENT),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_CONSUMED_AH,
+        name="Consumed Ah",
+        native_unit_of_measurement="Ah",
+        device_class=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_CONSUMED_AH),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_STATE_OF_CHARGE,
+        name="State Of Charge",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_STATE_OF_CHARGE),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_TEMPERATURE,
+        name="Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_TEMPERATURE),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_EXTRA_FLAGS,
+        name="Extra Flags",
+        device_class=None,
+        value_fn=lambda data: data.get(KEY_SHUNT_EXTRA_FLAGS),
+    ),
+)
+
 # All sensors combined
 ALL_SENSORS = BATTERY_SENSORS + PV_SENSORS + LOAD_SENSORS + CONTROLLER_SENSORS
 
@@ -291,7 +357,7 @@ async def async_setup_entry(
     if (
         not coordinator.device
         or coordinator.device.name.startswith("Unknown")
-        or not coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+        or not coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
     ):
         LOGGER.debug("Waiting for real device name before creating entities...")
         # Force an immediate refresh to try getting device info
@@ -303,7 +369,7 @@ async def async_setup_entry(
         for _ in range(10):
             await asyncio.sleep(1)
             if coordinator.device and coordinator.device.name.startswith(
-                RENOGY_BT_PREFIX
+                RENOGY_NAME_PREFIXES
             ):
                 LOGGER.debug("Real device name found: %s", coordinator.device.name)
                 real_name_found = True
@@ -316,7 +382,7 @@ async def async_setup_entry(
 
     # Now create entities with the best name we have
     if coordinator.device and (
-        coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+        coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
         or not coordinator.device.name.startswith("Unknown")
     ):
         LOGGER.info("Creating entities with device name: %s", coordinator.device.name)
@@ -343,13 +409,17 @@ def create_entities_helper(
     """Create sensor entities with provided coordinator and optional device."""
     entities = []
 
-    # Group sensors by category
-    for category_name, sensor_list in {
-        "Battery": BATTERY_SENSORS,
-        "PV": PV_SENSORS,
-        "Load": LOAD_SENSORS,
-        "Controller": CONTROLLER_SENSORS,
-    }.items():
+    if device_type == DeviceType.SHUNT.value:
+        groups = {"Shunt": SHUNT_SENSORS}
+    else:
+        groups = {
+            "Battery": BATTERY_SENSORS,
+            "PV": PV_SENSORS,
+            "Load": LOAD_SENSORS,
+            "Controller": CONTROLLER_SENSORS,
+        }
+
+    for category_name, sensor_list in groups.items():
         for description in sensor_list:
             sensor = RenogyBLESensor(
                 coordinator, device, description, category_name, device_type

@@ -32,7 +32,10 @@ from .const import (
     RENOGY_READ_CHAR_UUID,
     RENOGY_WRITE_CHAR_UUID,
     UNAVAILABLE_RETRY_INTERVAL,
+    RENOGY_SHUNT_MANUF_ID,
+    DeviceType,
 )
+from .parser import parse_shunt_packet
 
 try:
     from renogy_ble import RenogyParser
@@ -583,6 +586,33 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     device.name,
                     device.address,
                 )
+
+                if self.device.device_type == DeviceType.SHUNT.value:
+                    manu = service_info.advertisement.manufacturer_data.get(
+                        RENOGY_SHUNT_MANUF_ID
+                    )
+                    if manu:
+                        try:
+                            metrics = parse_shunt_packet(bytes(manu))
+                            self.device.parsed_data = metrics
+                            LOGGER.debug("Parsed SmartShunt data: %s", metrics)
+
+                            # Update coordinator data if successful
+                            self.data = dict(self.device.parsed_data)
+                            self.logger.debug(
+                                "Updated coordinator data: %s", self.data
+                            )
+
+                            # Update device availability
+                            self.device.update_availability(True, None)
+                            self.last_update_success = True
+                            return True
+                        except ValueError:
+                            LOGGER.warning("Invalid Shunt packet: %s", manu)
+
+                    self.device.update_availability(False, Exception("Invalid packet"))
+                    self.last_update_success = False
+                    return False
 
                 # Use bleak-retry-connector for more robust connection
                 try:
