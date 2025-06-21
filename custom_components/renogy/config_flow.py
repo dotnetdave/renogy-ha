@@ -22,6 +22,7 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     RENOGY_BT_PREFIX,
+    RENOGY_NAME_PREFIXES,
     SUPPORTED_DEVICE_TYPES,
 )
 
@@ -54,7 +55,7 @@ class RenogyConfigFlow(ConfigFlow, domain=DOMAIN):
     def _is_renogy_device(self, discovery_info: BluetoothServiceInfoBleak) -> bool:
         """Check if a device is a supported Renogy device."""
         return discovery_info.name is not None and discovery_info.name.startswith(
-            RENOGY_BT_PREFIX
+            RENOGY_NAME_PREFIXES
         )
 
     async def async_step_bluetooth(
