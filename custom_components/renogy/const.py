@@ -12,8 +12,10 @@ DEFAULT_SCAN_INTERVAL = 60  # seconds
 MIN_SCAN_INTERVAL = 10  # seconds
 MAX_SCAN_INTERVAL = 600  # seconds
 
-# Renogy BT-1 and BT-2 module identifiers - devices advertise with these prefixes
+# Renogy device name prefixes used for discovery
 RENOGY_BT_PREFIX = "BT-TH-"
+RENOGY_RTM_PREFIX = "RTM"
+RENOGY_NAME_PREFIXES = (RENOGY_BT_PREFIX, RENOGY_RTM_PREFIX)
 RENOGY_SHUNT_MANUF_ID = 0x4C00
 
 # Configuration parameters
