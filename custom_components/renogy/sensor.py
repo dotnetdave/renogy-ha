@@ -35,7 +35,6 @@ from .const import (
     DEFAULT_DEVICE_TYPE,
     DOMAIN,
     LOGGER,
-    RENOGY_BT_PREFIX,
     RENOGY_NAME_PREFIXES,
     DeviceType,
     KEY_SHUNT_BUS_VOLTAGE,
