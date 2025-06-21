@@ -36,6 +36,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     RENOGY_BT_PREFIX,
+    RENOGY_NAME_PREFIXES,
     DeviceType,
     KEY_SHUNT_BUS_VOLTAGE,
     KEY_SHUNT_SHUNT_DROP,
@@ -356,7 +357,7 @@ async def async_setup_entry(
     if (
         not coordinator.device
         or coordinator.device.name.startswith("Unknown")
-        or not coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+        or not coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
     ):
         LOGGER.debug("Waiting for real device name before creating entities...")
         # Force an immediate refresh to try getting device info
@@ -368,7 +369,7 @@ async def async_setup_entry(
         for _ in range(10):
             await asyncio.sleep(1)
             if coordinator.device and coordinator.device.name.startswith(
-                RENOGY_BT_PREFIX
+                RENOGY_NAME_PREFIXES
             ):
                 LOGGER.debug("Real device name found: %s", coordinator.device.name)
                 real_name_found = True
@@ -381,7 +382,7 @@ async def async_setup_entry(
 
     # Now create entities with the best name we have
     if coordinator.device and (
-        coordinator.device.name.startswith(RENOGY_BT_PREFIX)
+        coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
         or not coordinator.device.name.startswith("Unknown")
     ):
         LOGGER.info("Creating entities with device name: %s", coordinator.device.name)
