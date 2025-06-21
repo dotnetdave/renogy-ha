@@ -1,5 +1,4 @@
 import pytest
-
 import importlib.util
 from pathlib import Path
 
@@ -15,6 +14,7 @@ const = importlib.util.module_from_spec(spec_const)
 spec_const.loader.exec_module(const)
 
 parse_shunt_packet = parser.parse_shunt_packet
+parse_shunt_ble_packet = parser.parse_shunt_ble_packet
 RENOGY_SHUNT_MANUF_ID = const.RENOGY_SHUNT_MANUF_ID
 
 
@@ -49,3 +49,11 @@ def test_parse_shunt_packet_valid():
 def test_parse_shunt_packet_invalid_length():
     with pytest.raises(ValueError):
         parse_shunt_packet(b"\x00\x01\x02")
+
+
+def test_parse_shunt_ble_packet_0c03():
+    data = bytes([0x00, 0x01, 0x0C, 0x03, 0x0A, 0x06, 0x00, 0xA5, 0x03, 0x74, 0xEB])
+    result = parse_shunt_ble_packet(data)
+    assert result["packetType"] == "0x0C03"
+    assert result["socRaw"] == 0xA5
+    assert result["state_of_charge"] == pytest.approx(93.4, rel=1e-2)
