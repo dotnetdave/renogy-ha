@@ -14,6 +14,7 @@ MAX_SCAN_INTERVAL = 600  # seconds
 
 # Renogy BT-1 and BT-2 module identifiers - devices advertise with these prefixes
 RENOGY_BT_PREFIX = "BT-TH-"
+RENOGY_SHUNT_MANUF_ID = 0x4C00
 
 # Configuration parameters
 CONF_SCAN_INTERVAL = "scan_interval"
@@ -28,6 +29,7 @@ class DeviceType(Enum):
     CONTROLLER = "controller"
     BATTERY = "battery"
     INVERTER = "inverter"
+    SHUNT = "shunt"
 
 
 # List of supported device types
@@ -53,6 +55,15 @@ MAX_NOTIFICATION_WAIT_TIME = 2.0
 
 # Default device ID for Renogy devices
 DEFAULT_DEVICE_ID = 0xFF
+
+# SmartShunt sensor keys
+KEY_SHUNT_BUS_VOLTAGE = "bus_voltage"
+KEY_SHUNT_SHUNT_DROP = "shunt_drop"
+KEY_SHUNT_CURRENT = "current"
+KEY_SHUNT_CONSUMED_AH = "consumed_ah"
+KEY_SHUNT_STATE_OF_CHARGE = "state_of_charge"
+KEY_SHUNT_TEMPERATURE = "temperature"
+KEY_SHUNT_EXTRA_FLAGS = "extra_flags"
 
 # Modbus commands for requesting data
 COMMANDS = {
