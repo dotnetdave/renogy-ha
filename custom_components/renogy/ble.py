@@ -31,11 +31,12 @@ from .const import (
     MAX_NOTIFICATION_WAIT_TIME,
     RENOGY_READ_CHAR_UUID,
     RENOGY_WRITE_CHAR_UUID,
+    RENOGY_SHUNT_PACKET_SERVICE_UUID,
     UNAVAILABLE_RETRY_INTERVAL,
     RENOGY_SHUNT_MANUF_ID,
     DeviceType,
 )
-from .parser import parse_shunt_packet
+from .parser import parse_shunt_packet, parse_shunt_ble_packet
 
 try:
     from renogy_ble import RenogyParser
@@ -594,6 +595,18 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     if manu:
                         try:
                             metrics = parse_shunt_packet(bytes(manu))
+
+                            # Also parse service data packets if present
+                            svc = service_info.advertisement.service_data.get(
+                                RENOGY_SHUNT_PACKET_SERVICE_UUID
+                            )
+                            if svc:
+                                try:
+                                    packet_metrics = parse_shunt_ble_packet(bytes(svc))
+                                    metrics.update(packet_metrics)
+                                except ValueError:
+                                    LOGGER.warning("Invalid SmartShunt BLE packet: %s", svc)
+
                             self.device.parsed_data = metrics
                             LOGGER.debug("Parsed SmartShunt data: %s", metrics)
 
@@ -637,9 +650,12 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                             notification_data.extend(data)
                             notification_event.set()
 
-                        await client.start_notify(
-                            RENOGY_READ_CHAR_UUID, notification_handler
+                        notify_uuid = (
+                            RENOGY_SHUNT_PACKET_SERVICE_UUID
+                            if self.device.device_type == DeviceType.SHUNT.value
+                            else RENOGY_READ_CHAR_UUID
                         )
+                        await client.start_notify(notify_uuid, notification_handler)
 
                         for cmd_name, cmd in COMMANDS[self.device_type].items():
                             notification_data.clear()
@@ -709,7 +725,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                                     device.name,
                                 )
 
-                        await client.stop_notify(RENOGY_READ_CHAR_UUID)
+                        await client.stop_notify(notify_uuid)
                         success = any_command_succeeded
                         if not success:
                             error = Exception("No commands completed successfully")

@@ -39,3 +39,26 @@ def parse_shunt_packet(data: bytes) -> Dict[str, float | int | None]:
     }
 
     return metrics
+
+
+def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int]:
+    """Parse a SmartShunt notification packet."""
+    if len(data) < 4:
+        raise ValueError("packet too short")
+
+    packet_type = data[3]
+
+    if packet_type == 0x03:
+        if len(data) < 8:
+            raise ValueError("packet too short")
+
+        soc_raw = data[7]
+        soc_percent = round(soc_raw / 1.767, 1)
+
+        return {
+            "packetType": "0x0C03",
+            "socRaw": soc_raw,
+            "state_of_charge": soc_percent,
+        }
+
+    raise ValueError(f"unsupported packet type 0x{packet_type:02X}")
