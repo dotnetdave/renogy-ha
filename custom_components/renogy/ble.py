@@ -612,6 +612,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
                     self.device.update_availability(False, Exception("Invalid packet"))
                     self.last_update_success = False
+
                     return False
 
                 # Use bleak-retry-connector for more robust connection
