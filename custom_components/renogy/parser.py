@@ -42,23 +42,21 @@ def parse_shunt_packet(data: bytes) -> Dict[str, float | int | None]:
 
 
 def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int]:
-    """Parse a SmartShunt notification packet."""
-    if len(data) < 4:
+    """Parse a SmartShunt BLE packet containing SOC (Function Code 0x03)."""
+    if len(data) < 7:
         raise ValueError("packet too short")
 
-    packet_type = data[3]
+    func_code = data[3]
+    if func_code == 0x03:
+        length = data[4]
+        if length < 2 or len(data) < 5 + length:
+            raise ValueError("invalid length")
 
-    if packet_type == 0x03:
-        if len(data) < 8:
-            raise ValueError("packet too short")
-
-        soc_raw = data[7]
-        soc_percent = round(soc_raw / 1.767, 1)
-
+        soc_raw = int.from_bytes(data[5:7], "big")
         return {
             "packetType": "0x0C03",
             "socRaw": soc_raw,
-            "state_of_charge": soc_percent,
+            "state_of_charge": min(max(soc_raw, 0), 100),  # Clamp 0–100
         }
 
-    raise ValueError(f"unsupported packet type 0x{packet_type:02X}")
+    raise ValueError(f"Unsupported function code: 0x{func_code:02X}")

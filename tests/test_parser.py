@@ -52,8 +52,8 @@ def test_parse_shunt_packet_invalid_length():
 
 
 def test_parse_shunt_ble_packet_0c03():
-    data = bytes([0x00, 0x01, 0x0C, 0x03, 0x0A, 0x06, 0x00, 0xA5, 0x03, 0x74, 0xEB])
+    data = bytes([0x00, 0x01, 0x0C, 0x03, 0x02, 0x00, 0xA5])
     result = parse_shunt_ble_packet(data)
     assert result["packetType"] == "0x0C03"
-    assert result["socRaw"] == 0xA5
-    assert result["state_of_charge"] == pytest.approx(93.4, rel=1e-2)
+    assert result["socRaw"] == 0x00A5
+    assert result["state_of_charge"] == 100
