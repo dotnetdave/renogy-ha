@@ -110,6 +110,18 @@ It can be extremely helpful to enable debug logging when troubleshooting issues.
 - Check the Renogy app to compare readings
 - Note that some values (like daily totals) reset at midnight
 
+### BLE Test Harness
+To experiment with raw BLE notification data, a small test harness is provided
+in ``tools/ble_test_harness.py``.  It can decode hex strings captured from the
+device and display the parsed metrics using the same parser as the integration.
+
+```
+python tools/ble_test_harness.py "00-01-0C-03-02-00-A5"
+```
+
+Multiple strings or text files containing one hex value per line may be passed
+as arguments.
+
 ## Support
 - For bugs, please open an issue on GitHub
 - Include Home Assistant logs and your device model information
