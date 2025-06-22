@@ -1,4 +1,10 @@
-"""Support for Renogy BLE sensors."""
+"""Support for Renogy BLE sensors.
+
+The sensor platform exposes measurements parsed by the coordinator as Home
+Assistant sensor entities.  Each ``RenogyBLEDevice`` can provide multiple
+metrics, all of which are defined via ``SensorEntityDescription`` instances in
+this module.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +34,8 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
+from .ble import RenogyActiveBluetoothCoordinator
+from .device import RenogyBLEDevice
 from .const import (
     ATTR_MANUFACTURER,
     CONF_DEVICE_TYPE,
