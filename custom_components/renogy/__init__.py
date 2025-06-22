@@ -1,4 +1,11 @@
-"""Renogy BLE integration for Home Assistant."""
+"""Renogy BLE integration for Home Assistant.
+
+The ``__init__`` module wires together the coordinator, sensors and device
+registry management.  The entry point ``async_setup_entry`` creates the
+``RenogyActiveBluetoothCoordinator`` responsible for periodically reading from
+the BLE device and distributing the parsed metrics to the rest of Home
+Assistant.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +14,8 @@ from homeassistant.const import CONF_ADDRESS, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
 
-from .ble import RenogyActiveBluetoothCoordinator, RenogyBLEDevice
+from .ble import RenogyActiveBluetoothCoordinator
+from .device import RenogyBLEDevice
 from .const import (
     CONF_DEVICE_TYPE,
     CONF_SCAN_INTERVAL,
