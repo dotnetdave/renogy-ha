@@ -53,7 +53,7 @@ RENOGY_WRITE_CHAR_UUID = (
 )
 
 # SmartShunt notification service/characteristic UUID
-RENOGY_SHUNT_PACKET_SERVICE_UUID = "0000c411-0000-1000-8000-00805f9b34fb"
+RENOGY_SHUNT_PACKET_SERVICE_UUID = "0000c211-0000-1000-8000-00805f9b34fb"
 
 # Time in minutes to wait before attempting to reconnect to unavailable devices
 UNAVAILABLE_RETRY_INTERVAL = 10
