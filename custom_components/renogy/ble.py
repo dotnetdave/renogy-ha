@@ -284,24 +284,11 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         return should_poll
 
     async def _read_device_data(self, service_info: BluetoothServiceInfoBleak) -> bool:
-        """Read data from a Renogy BLE device using an active connection.
-
-        The method performs the following high level steps:
-        1. Ensure only one connection attempt happens at a time using a lock.
-        2. Create or update the :class:`RenogyBLEDevice` instance.
-        3. For SmartShunt devices parse advertisement data directly.
-        4. Otherwise connect over BLE, send Modbus read requests and wait for
-           notifications.
-        5. Pass received data to ``update_parsed_data`` and record success.
-        6. Update the coordinator state and availability flags accordingly.
-        """
+        """Read data from a Renogy BLE device using an active connection."""
         async with self._connection_lock:
+            self._connection_in_progress = True
             try:
-                self._connection_in_progress = True
-                success = False
-                error = None
-
-                # Use service_info to get a BLE device and update our device object
+                # Prepare or update RenogyBLEDevice
                 if not self.device:
                     self.logger.debug(
                         "Creating new RenogyBLEDevice for %s as %s",
@@ -349,226 +336,256 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                         )
                         self.device.device_type = self.device_type
 
-                device = self.device
-                self.logger.debug(
-                    "Polling %s device: %s (%s)",
-                    device.device_type,
-                    device.name,
-                    device.address,
-                )
-
+                # Dispatch to appropriate flow
                 if self.device.device_type == DeviceType.SHUNT.value:
-                    manu = service_info.advertisement.manufacturer_data.get(
-                        RENOGY_SHUNT_MANUF_ID
-                    )
-                    if manu:
-                        try:
-                            metrics = parse_shunt_packet(bytes(manu))
-
-                            # Also parse service data packets if present
-                            svc = service_info.advertisement.service_data.get(
-                                RENOGY_SHUNT_PACKET_SERVICE_UUID
-                            )
-                            if svc:
-                                try:
-                                    packet_metrics = parse_shunt_ble_packet(bytes(svc))
-                                    metrics.update(packet_metrics)
-                                except ValueError:
-                                    LOGGER.warning("Invalid SmartShunt BLE packet: %s", svc)
-
-                            self.device.parsed_data = metrics
-                            LOGGER.debug("Parsed SmartShunt data: %s", metrics)
-
-                            # Update coordinator data if successful
-                            self.data = dict(self.device.parsed_data)
-                            self.logger.debug(
-                                "Updated coordinator data: %s", self.data
-                            )
-
-                            # Update device availability
-                            self.device.update_availability(True, None)
-                            self.last_update_success = True
-                            return True
-                        except ValueError:
-                            LOGGER.warning("Invalid Shunt packet: %s", manu)
-
-                    self.device.update_availability(False, Exception("Invalid packet"))
-                    self.last_update_success = False
-                    return False
-
-                # Use bleak-retry-connector for more robust connection
-                try:
-                    # Establish connection with retry capability.  This helper
-                    # retries a few times before giving up which greatly
-                    # improves reliability when the device is busy.
-                    client = await establish_connection(
-                        BleakClientWithServiceCache,
-                        service_info.device,
-                        device.name or device.address,
-                        max_attempts=3,
-                    )
-
-                    any_command_succeeded = False
-
-                    try:
-                        self.logger.debug("Connected to device %s", device.name)
-
-                        # Create an event that will be set when notification data is received
-                        notification_event = asyncio.Event()
-                        notification_data = bytearray()
-
-                        def notification_handler(sender, data):
-                            notification_data.extend(data)
-                            notification_event.set()
-
-                        notify_uuid = (
-                            RENOGY_SHUNT_PACKET_SERVICE_UUID
-                            if self.device.device_type == DeviceType.SHUNT.value
-                            else RENOGY_READ_CHAR_UUID
-                        )
-                        await client.start_notify(notify_uuid, notification_handler)
-
-                        # Iterate through each Modbus command defined for the
-                        # current device type.  All results are gathered before
-                        # the connection is closed.
-                        for cmd_name, cmd in COMMANDS[self.device_type].items():
-                            notification_data.clear()
-                            notification_event.clear()
-
-                            # Build and send the Modbus read request for this
-                            # command.  The helper appends the CRC bytes.
-                            modbus_request = ModbusUtils.create_read_request(
-                                DEFAULT_DEVICE_ID, *cmd
-                            )
-                            self.logger.debug(
-                                "Sending %s command: %s",
-                                cmd_name,
-                                list(modbus_request),
-                            )
-                            await client.write_gatt_char(
-                                RENOGY_WRITE_CHAR_UUID, modbus_request
-                            )
-
-                            # Expected length = 3 header bytes + 2 * word_count
-                            # data bytes + 2 byte CRC.
-                            word_count = cmd[2]
-                            expected_len = 3 + word_count * 2 + 2
-                            start_time = self.hass.loop.time()
-
-                            # Wait until the entire response has been received
-                            # via notifications or until a timeout occurs.
-
-                            try:
-                                while len(notification_data) < expected_len:
-                                    remaining = MAX_NOTIFICATION_WAIT_TIME - (
-                                        self.hass.loop.time() - start_time
-                                    )
-                                    if remaining <= 0:
-                                        raise asyncio.TimeoutError()
-                                    await asyncio.wait_for(
-                                        notification_event.wait(), remaining
-                                    )
-                                    notification_event.clear()
-                            except asyncio.TimeoutError:
-                                self.logger.info(
-                                    "Timeout – only %s / %s bytes received for %s from device %s",
-                                    len(notification_data),
-                                    expected_len,
-                                    cmd_name,
-                                    device.name,
-                                )
-                                continue
-
-                            # Slice the collected notifications in case extra
-                            # bytes were received and pass them to the parser.
-                            result_data = bytes(notification_data[:expected_len])
-                            self.logger.debug(
-                                "Received %s data length: %s (expected %s)",
-                                cmd_name,
-                                len(result_data),
-                                expected_len,
-                            )
-
-                            # Parse and store the response on the device object
-                            cmd_success = device.update_parsed_data(
-                                result_data,
-                                register=cmd[1],
-                                cmd_name=cmd_name,
-                            )
-
-                            if cmd_success:
-                                # Keep track of at least one successful command
-                                self.logger.debug(
-                                    "Successfully read and parsed %s data from device %s",
-                                    cmd_name,
-                                    device.name,
-                                )
-                                any_command_succeeded = True
-                            else:
-                                self.logger.info(
-                                    "Failed to parse %s data from device %s",
-                                    cmd_name,
-                                    device.name,
-                                )
-
-                        await client.stop_notify(notify_uuid)
-                        success = any_command_succeeded
-                        if not success:
-                            error = Exception("No commands completed successfully")
-
-                    except BleakError as e:
-                        self.logger.info(
-                            "BLE error with device %s: %s", device.name, str(e)
-                        )
-                        error = e
-                        success = False
-                    except Exception as e:
-                        self.logger.error(
-                            "Error reading data from device %s: %s", device.name, str(e)
-                        )
-                        error = e
-                        success = False
-                    finally:
-                        # BleakClientWithServiceCache handles disconnect in context manager
-                        # but we need to ensure the client is disconnected
-                        if client.is_connected:
-                            try:
-                                await client.disconnect()
-                                self.logger.debug(
-                                    "Disconnected from device %s", device.name
-                                )
-                            except Exception as e:
-                                self.logger.debug(
-                                    "Error disconnecting from device %s: %s",
-                                    device.name,
-                                    str(e),
-                                )
-                                # Don't override previous errors with disconnect errors
-                                if error is None:
-                                    error = e
-
-                except (BleakError, asyncio.TimeoutError) as connection_error:
-                    self.logger.info(
-                        "Failed to establish connection with device %s: %s",
-                        device.name,
-                        str(connection_error),
-                    )
-                    error = connection_error
-                    success = False
-
-                # Always update the device availability and the coordinator's
-                # success flag so entities can react appropriately.
-                device.update_availability(success, error)
-                self.last_update_success = success
-
-                # Update coordinator data if successful
-                if success and device.parsed_data:
-                    self.data = dict(device.parsed_data)
-                    self.logger.debug("Updated coordinator data: %s", self.data)
-
-                return success
+                    return await self._read_shunt_device(service_info)
+                return await self._read_modbus_device(service_info)
             finally:
                 self._connection_in_progress = False
+
+    async def _read_shunt_device(self, service_info: BluetoothServiceInfoBleak) -> bool:
+        """Handle reading data for SmartShunt devices via BLE notifications + manufacturer packet."""
+        device = self.device
+        # Establish connection with retry
+        client = await establish_connection(
+            BleakClientWithServiceCache,
+            service_info.device,
+            device.name or device.address,
+            max_attempts=3,
+        )
+        try:
+            # Collect notifications
+            notification_event = asyncio.Event()
+            received_packets: list[bytes] = []
+            def _notif_handler(_: int, data: bytes) -> None:
+                received_packets.append(data)
+                notification_event.set()
+
+            await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
+            await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
+            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+
+            # Build metrics
+            metrics: Dict[str, float | int | str] = {}
+            for pkt in received_packets:
+                try:
+                    metrics.update(parse_shunt_ble_packet(pkt))
+                except ValueError:
+                    LOGGER.warning("Invalid SmartShunt BLE packet: %s", pkt)
+
+            manu = service_info.advertisement.manufacturer_data.get(
+                RENOGY_SHUNT_MANUF_ID, b""
+            )
+            try:
+                metrics.update(parse_shunt_packet(bytes(manu)))
+            except ValueError:
+                LOGGER.warning("Invalid SmartShunt manufacturer packet: %s", manu)
+
+            self.device.parsed_data = metrics
+            self.data = dict(metrics)
+            self.device.update_availability(True, None)
+            self.last_update_success = True
+            LOGGER.debug("Parsed SmartShunt data: %s", metrics)
+            return True
+        except (BleakError, asyncio.TimeoutError, ValueError) as err:
+            LOGGER.warning("Shunt read failed: %s", err)
+            self.device.update_availability(False, err)
+            self.last_update_success = False
+            return False
+        finally:
+            # Always disconnect
+            try:
+                if client.is_connected:
+                    await client.disconnect()
+            except Exception:
+                pass
+
+    async def _read_modbus_device(self, service_info: BluetoothServiceInfoBleak) -> bool:
+        """Handle reading data over Modbus for non-shunt devices."""
+        device = self.device
+        self.logger.debug(
+            "Polling %s device: %s (%s)",
+            device.device_type,
+            device.name,
+            device.address,
+        )
+
+         # Use bleak-retry-connector for more robust connection
+         try:
+             # Establish connection with retry capability.  This helper
+             # retries a few times before giving up which greatly
+             # improves reliability when the device is busy.
+-            client = await establish_connection(
++            client = await establish_connection(
+                 BleakClientWithServiceCache,
+                 service_info.device,
+                 device.name or device.address,
+                 max_attempts=3,
+             )
+
+             any_command_succeeded = False
+
+             try:
+                 self.logger.debug("Connected to device %s", device.name)
+
+                 # Create an event that will be set when notification data is received
+                 notification_event = asyncio.Event()
+                 notification_data = bytearray()
+
+                 def notification_handler(sender, data):
+                     notification_data.extend(data)
+                     notification_event.set()
+
+                # Subscribe to Modbus read characteristic
+                notify_uuid = RENOGY_READ_CHAR_UUID
+                await client.start_notify(notify_uuid, notification_handler)
+
+                # Iterate through each Modbus command defined for the
+                # current device type.  All results are gathered before
+                # the connection is closed.
+                for cmd_name, cmd in COMMANDS[self.device_type].items():
+                    notification_data.clear()
+                    notification_event.clear()
+
+                    # Build and send the Modbus read request for this
+                    # command.  The helper appends the CRC bytes.
+                    modbus_request = ModbusUtils.create_read_request(
+                        DEFAULT_DEVICE_ID, *cmd
+                    )
+                    self.logger.debug(
+                        "Sending %s command: %s",
+                        cmd_name,
+                        list(modbus_request),
+                    )
+                    await client.write_gatt_char(
+                        RENOGY_WRITE_CHAR_UUID, modbus_request
+                    )
+
+                    # Expected length = 3 header bytes + 2 * word_count
+                    # data bytes + 2 byte CRC.
+                    word_count = cmd[2]
+                    expected_len = 3 + word_count * 2 + 2
+                    start_time = self.hass.loop.time()
+
+                    # Wait until the entire response has been received
+                    # via notifications or until a timeout occurs.
+
+                    try:
+                        while len(notification_data) < expected_len:
+                            remaining = MAX_NOTIFICATION_WAIT_TIME - (
+                                self.hass.loop.time() - start_time
+                            )
+                            if remaining <= 0:
+                                raise asyncio.TimeoutError()
+                            await asyncio.wait_for(
+                                notification_event.wait(), remaining
+                            )
+                            notification_event.clear()
+                    except asyncio.TimeoutError:
+                        self.logger.info(
+                            "Timeout – only %s / %s bytes received for %s from device %s",
+                            len(notification_data),
+                            expected_len,
+                            cmd_name,
+                            device.name,
+                        )
+                        continue
+
+                    # Slice the collected notifications in case extra
+                    # bytes were received and pass them to the parser.
+                    result_data = bytes(notification_data[:expected_len])
+                    self.logger.debug(
+                        "Received %s data length: %s (expected %s)",
+                        cmd_name,
+                        len(result_data),
+                        expected_len,
+                    )
+
+                    # Parse and store the response on the device object
+                    cmd_success = device.update_parsed_data(
+                        result_data,
+                        register=cmd[1],
+                        cmd_name=cmd_name,
+                    )
+
+                    if cmd_success:
+                        # Keep track of at least one successful command
+                        self.logger.debug(
+                            "Successfully read and parsed %s data from device %s",
+                            cmd_name,
+                            device.name,
+                        )
+                        any_command_succeeded = True
+                    else:
+                        self.logger.info(
+                            "Failed to parse %s data from device %s",
+                            cmd_name,
+                            device.name,
+                        )
+
+                await client.stop_notify(notify_uuid)
+                success = any_command_succeeded
+                if not success:
+                    error = Exception("No commands completed successfully")
+
+             except BleakError as e:
+                 self.logger.info(
+                     "BLE error with device %s: %s", device.name, str(e)
+                 )
+                 error = e
+                 success = False
+             except Exception as e:
+                 self.logger.error(
+                     "Error reading data from device %s: %s", device.name, str(e)
+                 )
+                 error = e
+                 success = False
+             finally:
+                 # BleakClientWithServiceCache handles disconnect in context manager
+                 # but we need to ensure the client is disconnected
+                 if client.is_connected:
+                     try:
+                         await client.disconnect()
+                         self.logger.debug(
+                             "Disconnected from device %s", device.name
+                         )
+                     except Exception as e:
+                         self.logger.debug(
+                             "Error disconnecting from device %s: %s",
+                             device.name,
+                             str(e),
+                         )
+                         # Don't override previous errors with disconnect errors
+                         if error is None:
+                             error = e
+
+         except (BleakError, asyncio.TimeoutError) as connection_error:
+             self.logger.info(
+                 "Failed to establish connection with device %s: %s",
+                 device.name,
+                 str(connection_error),
+             )
+             error = connection_error
+             success = False
++        finally:
++            # Ensure GATT client is disconnected
++            try:
++                if client and client.is_connected:
++                    await client.disconnect()
++            except Exception:
++                pass
+
+         # Always update the device availability and the coordinator's
+         # success flag so entities can react appropriately.
+         device.update_availability(success, error)
+         self.last_update_success = success
+
+         # Update coordinator data if successful
+         if success and device.parsed_data:
+             self.data = dict(device.parsed_data)
+             self.logger.debug("Updated coordinator data: %s", self.data)
+
+        return success
 
     async def _async_poll(self, service_info: BluetoothServiceInfoBleak) -> None:
         """Poll the device and notify listeners with new data."""

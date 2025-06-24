@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import voluptuous as vol
 from typing import Any
 
-import voluptuous as vol
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
