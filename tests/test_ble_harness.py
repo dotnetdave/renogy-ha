@@ -13,8 +13,9 @@ def test_parse_hex():
     assert data == bytes([0x00, 0xFF])
 
 
-def test_decode_lines_soc_packet():
-    lines = ["00-01-0C-03-02-00-A5"]
+def test_decode_lines_numeric_packet():
+    lines = ["AA-55-44-2E-E0-27-10-03-E8-00-FA-50-41-01"]
     results = ble_harness.decode_lines(lines)
-    assert results[0]["packetType"] == "0x0C03"
-    assert results[0]["state_of_charge"] == 100
+    assert results[0]["packetType"] == "0x44"
+    assert results[0]["bus_voltage"] == 12.0
+    assert results[0]["state_of_charge"] == 80

@@ -51,9 +51,36 @@ def test_parse_shunt_packet_invalid_length():
         parse_shunt_packet(b"\x00\x01\x02")
 
 
-def test_parse_shunt_ble_packet_0c03():
-    data = bytes([0x00, 0x01, 0x0C, 0x03, 0x02, 0x00, 0xA5])
+def test_parse_shunt_ble_packet_model_id():
+    data = b"\x00\x01\x10RSSHUNT"
     result = parse_shunt_ble_packet(data)
-    assert result["packetType"] == "0x0C03"
-    assert result["socRaw"] == 0x00A5
-    assert result["state_of_charge"] == 100
+    assert result["packetType"] == "0x10"
+    assert result["model_id"] == "RSSHUNT"
+
+
+def test_parse_shunt_ble_packet_numeric():
+    data = bytes([
+        0xAA,
+        0x55,
+        0x44,
+        0x2E,
+        0xE0,
+        0x27,
+        0x10,
+        0x03,
+        0xE8,
+        0x00,
+        0xFA,
+        0x50,
+        0x41,
+        0x01,
+    ])
+    result = parse_shunt_ble_packet(data)
+    assert result["packetType"] == "0x44"
+    assert result["bus_voltage"] == 12.0
+    assert result["shunt_drop"] == 10.0
+    assert result["current"] == 1.0
+    assert result["consumed_ah"] == 2.5
+    assert result["state_of_charge"] == 80
+    assert result["temperature"] == 25
+    assert result["extra_flags"] == 1

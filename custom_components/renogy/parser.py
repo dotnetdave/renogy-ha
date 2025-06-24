@@ -41,22 +41,42 @@ def parse_shunt_packet(data: bytes) -> Dict[str, float | int | None]:
     return metrics
 
 
-def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int]:
-    """Parse a SmartShunt BLE packet containing SOC (Function Code 0x03)."""
-    if len(data) < 7:
+def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
+    """Parse a SmartShunt BLE notification packet from characteristic FFF1."""
+
+    if len(data) < 4:
         raise ValueError("packet too short")
 
-    func_code = data[3]
-    if func_code == 0x03:
-        length = data[4]
-        if length < 2 or len(data) < 5 + length:
-            raise ValueError("invalid length")
+    packet_type = data[2]
+    payload = data[3:]
 
-        soc_raw = int.from_bytes(data[5:7], "big")
+    if packet_type == 0x10:
+        # ASCII model ID string
+        model_id = payload.decode("ascii", errors="ignore").strip()
+        return {"packetType": "0x10", "model_id": model_id}
+
+    if packet_type == 0x44:
+        if len(payload) < 11:
+            raise ValueError("payload too short")
+
+        bus_v = int.from_bytes(payload[0:2], "big") / 1000.0
+        drop_mv = int.from_bytes(payload[2:4], "big") / 1000.0
+        curr_a = int.from_bytes(payload[4:6], "big", signed=True) / 1000.0
+        consumed_ah = int.from_bytes(payload[6:8], "big") / 100.0
+        soc_raw = payload[8]
+        soc = max(0, min(soc_raw, 100))
+        temp_c = payload[9] - 40
+        flags = payload[10]
+
         return {
-            "packetType": "0x0C03",
-            "socRaw": soc_raw,
-            "state_of_charge": min(max(soc_raw, 0), 100),  # Clamp 0–100
+            "packetType": "0x44",
+            "bus_voltage": bus_v,
+            "shunt_drop": drop_mv,
+            "current": curr_a,
+            "consumed_ah": consumed_ah,
+            "state_of_charge": soc,
+            "temperature": temp_c,
+            "extra_flags": flags,
         }
 
-    raise ValueError(f"Unsupported function code: 0x{func_code:02X}")
+    raise ValueError(f"Unsupported packet type: 0x{packet_type:02X}")
