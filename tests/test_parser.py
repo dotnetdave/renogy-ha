@@ -84,3 +84,30 @@ def test_parse_shunt_ble_packet_numeric():
     assert result["state_of_charge"] == 80
     assert result["temperature"] == 25
     assert result["extra_flags"] == 1
+
+
+def test_parse_shunt_ble_packet_group_battery_voltage():
+    data = bytes.fromhex(
+        "00-01-0C-05-06-06-00-9C-34-00-00-96-37".replace("-", "")
+    )
+    result = parse_shunt_ble_packet(data)
+    assert result["packetType"] == "0x05"
+    assert result["battery_voltage"] == 13.468
+
+
+def test_parse_shunt_ble_packet_group_soc():
+    data = bytes.fromhex("00-01-0C-03-0A-06-00-31-01-9B-EA".replace("-", ""))
+    result = parse_shunt_ble_packet(data)
+    assert result["packetType"] == "0x03"
+    assert result["state_of_charge"] == 30.5
+
+
+def test_parse_shunt_ble_messages_merge():
+    packets = [
+        bytes.fromhex("00-01-0C-05-06-06-00-9C-34-00-00-96-37".replace("-", "")),
+        bytes.fromhex("00-01-0C-03-0A-06-00-31-01-9B-EA".replace("-", "")),
+    ]
+    result = parser.parse_shunt_ble_messages(packets)
+    assert result["battery_voltage"] == 13.468
+    assert result["state_of_charge"] == 30.5
+
