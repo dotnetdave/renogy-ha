@@ -284,6 +284,38 @@ CONTROLLER_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
 
 SHUNT_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
     RenogyBLESensorDescription(
+        key=KEY_SHUNT_BUS_VOLTAGE,
+        name="Bus Voltage",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_BUS_VOLTAGE),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_SHUNT_DROP,
+        name="Shunt Drop",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_SHUNT_DROP),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_CURRENT,
+        name="Current",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_CURRENT),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_CONSUMED_AH,
+        name="Consumed Amp Hours",
+        native_unit_of_measurement="Ah",
+        device_class=None,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_CONSUMED_AH),
+    ),
+    RenogyBLESensorDescription(
         key=KEY_SHUNT_STATE_OF_CHARGE,
         name="State Of Charge",
         native_unit_of_measurement=PERCENTAGE,
@@ -291,10 +323,30 @@ SHUNT_SENSORS: tuple[RenogyBLESensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.get(KEY_SHUNT_STATE_OF_CHARGE),
     ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_TEMPERATURE,
+        name="Temperature",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda data: data.get(KEY_SHUNT_TEMPERATURE),
+    ),
+    RenogyBLESensorDescription(
+        key=KEY_SHUNT_EXTRA_FLAGS,
+        name="Extra Flags",
+        device_class=None,
+        value_fn=lambda data: data.get(KEY_SHUNT_EXTRA_FLAGS),
+    ),
 )
 
 # All sensors combined
-ALL_SENSORS = BATTERY_SENSORS + PV_SENSORS + LOAD_SENSORS + CONTROLLER_SENSORS
+ALL_SENSORS = (
+    BATTERY_SENSORS
+    + PV_SENSORS
+    + LOAD_SENSORS
+    + CONTROLLER_SENSORS
+    + SHUNT_SENSORS
+)
 
 
 async def async_setup_entry(
