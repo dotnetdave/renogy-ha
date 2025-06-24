@@ -51,7 +51,7 @@ def decode_payload(payload: bytes, register: int = 0) -> dict:
             return RenogyParser.parse(payload, "shunt", register)
         except Exception as exc:  # pragma: no cover - runtime aid only
             return {"error": str(exc)}
-    # Fallback handles only SmartShunt SOC packets (0x0C03)
+    # Fallback handles SmartShunt notification packets
     try:
         return parse_shunt_ble_packet(payload)
     except Exception as exc:  # pragma: no cover - runtime aid only
