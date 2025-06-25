@@ -410,31 +410,30 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             device.address,
         )
 
-         # Use bleak-retry-connector for more robust connection
-         try:
-             # Establish connection with retry capability.  This helper
-             # retries a few times before giving up which greatly
-             # improves reliability when the device is busy.
--            client = await establish_connection(
-+            client = await establish_connection(
-                 BleakClientWithServiceCache,
-                 service_info.device,
-                 device.name or device.address,
-                 max_attempts=3,
-             )
+        # Use bleak-retry-connector for more robust connection
+        try:
+            # Establish connection with retry capability.  This helper
+            # retries a few times before giving up which greatly
+            # improves reliability when the device is busy.
+            client = await establish_connection(
+                BleakClientWithServiceCache,
+                service_info.device,
+                device.name or device.address,
+                max_attempts=3,
+            )
 
-             any_command_succeeded = False
+            any_command_succeeded = False
 
-             try:
-                 self.logger.debug("Connected to device %s", device.name)
+            try:
+                self.logger.debug("Connected to device %s", device.name)
 
-                 # Create an event that will be set when notification data is received
-                 notification_event = asyncio.Event()
-                 notification_data = bytearray()
+                # Create an event that will be set when notification data is received
+                notification_event = asyncio.Event()
+                notification_data = bytearray()
 
-                 def notification_handler(sender, data):
-                     notification_data.extend(data)
-                     notification_event.set()
+                def notification_handler(sender, data):
+                    notification_data.extend(data)
+                    notification_event.set()
 
                 # Subscribe to Modbus read characteristic
                 notify_uuid = RENOGY_READ_CHAR_UUID
@@ -528,62 +527,62 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 if not success:
                     error = Exception("No commands completed successfully")
 
-             except BleakError as e:
-                 self.logger.info(
-                     "BLE error with device %s: %s", device.name, str(e)
-                 )
-                 error = e
-                 success = False
-             except Exception as e:
-                 self.logger.error(
-                     "Error reading data from device %s: %s", device.name, str(e)
-                 )
-                 error = e
-                 success = False
-             finally:
-                 # BleakClientWithServiceCache handles disconnect in context manager
-                 # but we need to ensure the client is disconnected
-                 if client.is_connected:
-                     try:
-                         await client.disconnect()
-                         self.logger.debug(
-                             "Disconnected from device %s", device.name
-                         )
-                     except Exception as e:
-                         self.logger.debug(
-                             "Error disconnecting from device %s: %s",
-                             device.name,
-                             str(e),
-                         )
-                         # Don't override previous errors with disconnect errors
-                         if error is None:
-                             error = e
+            except BleakError as e:
+                self.logger.info(
+                    "BLE error with device %s: %s", device.name, str(e)
+                )
+                error = e
+                success = False
+            except Exception as e:
+                self.logger.error(
+                    "Error reading data from device %s: %s", device.name, str(e)
+                )
+                error = e
+                success = False
+            finally:
+                # BleakClientWithServiceCache handles disconnect in context manager
+                # but we need to ensure the client is disconnected
+                if client.is_connected:
+                    try:
+                        await client.disconnect()
+                        self.logger.debug(
+                            "Disconnected from device %s", device.name
+                        )
+                    except Exception as e:
+                        self.logger.debug(
+                            "Error disconnecting from device %s: %s",
+                            device.name,
+                            str(e),
+                        )
+                        # Don't override previous errors with disconnect errors
+                        if error is None:
+                            error = e
 
-         except (BleakError, asyncio.TimeoutError) as connection_error:
-             self.logger.info(
-                 "Failed to establish connection with device %s: %s",
-                 device.name,
-                 str(connection_error),
-             )
-             error = connection_error
-             success = False
-+        finally:
-+            # Ensure GATT client is disconnected
-+            try:
-+                if client and client.is_connected:
-+                    await client.disconnect()
-+            except Exception:
-+                pass
+        except (BleakError, asyncio.TimeoutError) as connection_error:
+            self.logger.info(
+                "Failed to establish connection with device %s: %s",
+                device.name,
+                str(connection_error),
+            )
+            error = connection_error
+            success = False
+        finally:
+            # Ensure GATT client is disconnected
+            try:
+                if client and client.is_connected:
+                    await client.disconnect()
+            except Exception:
+                pass
 
-         # Always update the device availability and the coordinator's
-         # success flag so entities can react appropriately.
-         device.update_availability(success, error)
-         self.last_update_success = success
+        # Always update the device availability and the coordinator's
+        # success flag so entities can react appropriately.
+        device.update_availability(success, error)
+        self.last_update_success = success
 
-         # Update coordinator data if successful
-         if success and device.parsed_data:
-             self.data = dict(device.parsed_data)
-             self.logger.debug("Updated coordinator data: %s", self.data)
+        # Update coordinator data if successful
+        if success and device.parsed_data:
+            self.data = dict(device.parsed_data)
+            self.logger.debug("Updated coordinator data: %s", self.data)
 
         return success
 
