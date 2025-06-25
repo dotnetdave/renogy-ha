@@ -19,7 +19,7 @@ from homeassistant.components.bluetooth.active_update_coordinator import (
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, BluetoothScanningMode
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.components import bluetooth
 
 from bleak.exc import BleakError
@@ -51,6 +51,14 @@ except ImportError:
     LOGGER.error("renogy-ble library not found! Please re-install the integration")
     RenogyParser = None
     PARSER_AVAILABLE = False
+
+try:
+    from homeassistant.components.bluetooth import BluetoothScanningMode
+except (ImportError, AttributeError):
+    BluetoothScanningMode = None
+    LOGGER.warning(
+        "BluetoothScanningMode not available in this Home Assistant version; using default scan mode."
+    )
 
 # Fix undefined symbols and ensure proper error handling
 
@@ -89,7 +97,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             logger=logger,
             address=address,
             needs_poll_method=self._needs_poll,
-            poll_method=self._async_poll,            mode=BluetoothScanningMode.ACTIVE,
+            poll_method=self._async_poll,
+            mode=BluetoothScanningMode.ACTIVE if BluetoothScanningMode else None,
             connectable=True,
         )
         self.device: Optional[RenogyBLEDevice] = None
@@ -100,9 +109,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.logger.debug(
             "Initialized coordinator for %s as %s with %ss interval",
             address,
-            device_type,            scan_interval,
+            device_type,
+            scan_interval,
         )
-        
+
         # Add required properties for Home Assistant CoordinatorEntity compatibility
         self.last_update_success = True
         self.data: Dict[str, Any] = {}
@@ -110,7 +120,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.update_interval = timedelta(seconds=scan_interval)
         self._unsub_refresh = None
         self._request_refresh_task = None
-        
+
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
         self._connection_in_progress = False
@@ -646,11 +656,11 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         # Always update the device availability and the coordinator's
         # success flag so entities can react appropriately.
-        
+
         # Use local variables with guaranteed initialization to avoid UnboundLocalError
         final_success = locals().get('success', False)
         final_error = locals().get('error', Exception("Unknown error in _read_modbus_device"))
-        
+
         try:
             device.update_availability(final_success, final_error)
             self.last_update_success = final_success
