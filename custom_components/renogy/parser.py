@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Any, Dict
+import logging
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _bytes_to_int(bs: bytes, offset: int, length: int, *, signed: bool = False, scale: float = 1.0) -> float | int | None:
@@ -16,6 +19,7 @@ def _bytes_to_int(bs: bytes, offset: int, length: int, *, signed: bool = False, 
 
 def parse_shunt_packet(data: bytes) -> Dict[str, float | int | None]:
     """Parse a Renogy SmartShunt manufacturer specific packet."""
+    LOGGER.debug("Parsing manufacturer packet: %s", data)
     if len(data) < 12:
         raise ValueError("packet too short")
 
@@ -46,12 +50,13 @@ def parse_shunt_packet(data: bytes) -> Dict[str, float | int | None]:
         "temperature": temperature_raw - 40,
         "extra_flags": extra,
     }
-
+    LOGGER.debug("Parsed manufacturer packet data: %s", metrics)
     return metrics
 
 
 def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
     """Parse a SmartShunt BLE notification packet from characteristic FFF1."""
+    LOGGER.debug("Parsing BLE packet: %s", data)
 
     if len(data) < 4:
         raise ValueError("packet too short")
@@ -95,6 +100,7 @@ def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
                 "extra_flags": flags,
             }
             metrics["power_watts"] = round(bus_v * curr_a, 2)
+            LOGGER.debug("Parsed BLE packet data: %s", metrics)
             return metrics
 
         raise ValueError(f"Unsupported packet type: 0x{packet_type:02X}")

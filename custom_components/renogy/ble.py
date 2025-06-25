@@ -129,12 +129,14 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def async_request_refresh(self) -> None:
         """Request a refresh."""
+        self.logger.debug("Starting async_request_refresh for device %s", self.address)
         # Prevent overlapping refreshes
         if self._connection_lock.locked():
             self.logger.debug("Connection already in progress, skipping refresh request")
             return
 
         async with self._connection_lock:
+            self.logger.debug("Acquired connection lock for device %s", self.address)
             # Skip if device not ready for retry
             if self.device and not self.device.should_retry_connection:
                 self.logger.debug("Retry interval not reached for %s, skipping", self.address)
@@ -159,6 +161,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 return
 
             try:
+                self.logger.debug("Polling device %s with service info: %s", self.address, service_info)
                 await self._async_poll(service_info)
                 self.last_update_success = True
             except BleakOutOfConnectionSlotsError as exc:
@@ -178,7 +181,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                     self.device.update_availability(False, exc)
                 self.async_update_listeners()
             except BleakError as err:
-                # Handle BLE connection errors gracefully
                 self.logger.warning(
                     "BLE connection error for device %s: %s", self.address, err
                 )
@@ -198,6 +200,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 if self.device:
                     self.device.update_availability(False, err)
                 self.async_update_listeners()
+            finally:
+                self.logger.debug("Finished async_request_refresh for device %s", self.address)
 
     def async_add_listener(
         self, update_callback: Callable[[], None], context: Any = None
@@ -686,34 +690,28 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def _async_poll(self, service_info: BluetoothServiceInfoBleak) -> None:
         """Poll the device and notify listeners with new data."""
+        self.logger.debug("Starting _async_poll for device %s", self.address)
         # Prevent overlapping polls
         if self._connection_lock.locked():
             self.logger.debug("Connection already in progress, skipping _async_poll")
             return
-        
+
         async with self._connection_lock:
+            self.logger.debug("Acquired connection lock for polling device %s", self.address)
             self.last_poll_time = datetime.now()
             self.logger.debug(
                 "Polling device: %s (%s)", service_info.name, service_info.address
             )
-            # Read device data using service_info and Home Assistant's Bluetooth API
-            success = await self._read_device_data(service_info)
-
-            if success and self.device and self.device.parsed_data:
-                self.logger.debug("Parsed data: %s", self.device.parsed_data)
-
-                # Call the callback if available
-                if self.device_data_callback:
-                    try:
-                        await self.device_data_callback(self.device)
-                    except Exception as e:
-                        self.logger.error("Error in device data callback: %s", str(e))
-
-                # Update all listeners after successful data acquisition
-                self.async_update_listeners()
-            else:
-                self.logger.info("Failed to retrieve data from %s", service_info.address)
-                self.last_update_success = False
+            try:
+                success = await self._read_device_data(service_info)
+                if success and self.device and self.device.parsed_data:
+                    self.logger.debug("Polling successful for device %s", self.address)
+                else:
+                    self.logger.debug("Polling failed or no data for device %s", self.address)
+            except Exception as e:
+                self.logger.error("Error during _async_poll for device %s: %s", self.address, e)
+            finally:
+                self.logger.debug("Finished _async_poll for device %s", self.address)
 
     @callback
     def _async_handle_unavailable(
