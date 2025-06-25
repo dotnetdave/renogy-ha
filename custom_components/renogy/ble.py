@@ -403,7 +403,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
     async def _read_shunt_device(self, service_info: BluetoothServiceInfoBleak) -> bool:
         """Handle reading data for SmartShunt devices via BLE notifications + manufacturer packet."""
         device = self.device
-        # Prevent overlapping connection attempts
         try:
             client = await establish_connection(
                 BleakClientWithServiceCache,
@@ -420,9 +419,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             return False
 
         try:
-            # Collect notifications
             notification_event = asyncio.Event()
             received_packets: list[bytes] = []
+
             def _notif_handler(_: int, data: bytes) -> None:
                 received_packets.append(data)
                 notification_event.set()
@@ -430,13 +429,12 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
             await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
             await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
-            
-            # Build metrics
+
             metrics: Dict[str, float | int | str] = {}
             for pkt in received_packets:
                 try:
                     metrics.update(parse_shunt_ble_packet(pkt))
-                except ValueError:
+                except ValueError as parse_err:
                     self.logger.warning("Invalid SmartShunt BLE packet: %s", pkt)
 
             manu = service_info.advertisement.manufacturer_data.get(
@@ -444,7 +442,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             )
             try:
                 metrics.update(parse_shunt_packet(bytes(manu)))
-            except ValueError:
+            except ValueError as manu_err:
                 self.logger.warning("Invalid SmartShunt manufacturer packet: %s", manu)
 
             self.device.parsed_data = metrics
@@ -459,12 +457,11 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             self.last_update_success = False
             return False
         finally:
-            # Always disconnect
             try:
                 if client.is_connected:
                     await client.disconnect()
-            except Exception:
-                pass
+            except Exception as disconnect_err:
+                self.logger.debug("Error during client disconnect: %s", disconnect_err)
 
     async def _read_modbus_device(self, service_info: BluetoothServiceInfoBleak) -> bool:
         """Handle reading data over Modbus for non-shunt devices."""
