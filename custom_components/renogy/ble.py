@@ -436,7 +436,6 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 notification_event.set()
 
             # --- Enable notifications on the shunt characteristic (Android style) ---
-            # 1. Enable notifications in the BLE stack (handled by Bleak's start_notify)
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
             self.logger.debug("Started notify on shunt packet service UUID; waiting for notification...")
 
@@ -444,20 +443,16 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             try:
                 cccd_uuid = "00002902-0000-1000-8000-00805f9b34fb"
                 char = client.services.get_characteristic(RENOGY_SHUNT_PACKET_SERVICE_UUID)
-                if char is not None:
-                    descriptor = char.get_descriptor(cccd_uuid)
-                    if descriptor is not None:
-                        await client.write_gatt_descriptor(descriptor.handle, b"\x01\x00")
+                if char is not None and hasattr(char, "descriptors"):
+                    cccd = next(
+                        (d for d in char.descriptors if d.uuid.lower() == cccd_uuid),
+                        None,
+                    )
+                    if cccd is not None:
+                        await client.write_gatt_descriptor(cccd.handle, b"\x01\x00")
                         self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for shunt notifications (Android style)")
             except Exception as e:
                 self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
-
-            # Try writing to the paired writable characteristic to trigger notification
-            try:
-                await client.write_gatt_char("0000c111-0000-1000-8000-00805f9b34fb", b"\x00")
-                self.logger.debug("Wrote b'\\x00' to 0000c111-0000-1000-8000-00805f9b34fb to trigger notification")
-            except Exception as e:
-                self.logger.debug("Failed to write to 0000c111-0000-1000-8000-00805f9b34fb: %s", e)
 
             # Optional: Try reading the characteristic to trigger notifications (some devices require this)
             try:
