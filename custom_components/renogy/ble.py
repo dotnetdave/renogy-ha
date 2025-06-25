@@ -34,7 +34,7 @@ from .const import (
     MAX_NOTIFICATION_WAIT_TIME,
     RENOGY_READ_CHAR_UUID,
     RENOGY_WRITE_CHAR_UUID,
-    RENOGY_SHUNT_PACKET_SERVICE_UUID,
+    RENOGY_SHUNT_SERVICE_UUID,
     UNAVAILABLE_RETRY_INTERVAL,
     RENOGY_SHUNT_MANUF_ID,
     DeviceType,
@@ -480,7 +480,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 self.logger.warning("Timeout waiting for notification from device %s", device.name)
                 return False
 
-            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+            await client.stop_notify(NOTIFY_CHAR_UUID)
 
             metrics: Dict[str, float | int | str] = {}
             for pkt in received_packets:
