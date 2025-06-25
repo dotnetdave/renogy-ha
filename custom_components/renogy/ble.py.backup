@@ -14,13 +14,8 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
 
-from bleak.exc import BleakError, BleakDBusError  # extended to catch DBus errors
-from bleak_retry_connector import (
-    BleakClientWithServiceCache,
-    establish_connection,
-    BleakConnectionError,
-    BleakOutOfConnectionSlotsError,
-)
+from bleak.exc import BleakError
+from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothChange,
@@ -115,9 +110,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
-        self._connection_in_progress = False
-
-    @property
+        self._connection_in_progress = False    @property
     def device_type(self) -> str:
         """Get the device type from configuration."""
         return self._device_type
@@ -129,84 +122,57 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def async_request_refresh(self) -> None:
         """Request a refresh."""
-        # Prevent overlapping refreshes
-        if self._connection_lock.locked():
-            self.logger.debug("Connection already in progress, skipping refresh request")
+        self.logger.debug("Manual refresh requested for device %s", self.address)
+
+        # Don't start operations if Home Assistant is shutting down
+        if self.hass.state not in (CoreState.starting, CoreState.running):
+            self.logger.debug("Skipping refresh - Home Assistant is not running")
             return
 
-        async with self._connection_lock:
-            # Skip if device not ready for retry
-            if self.device and not self.device.should_retry_connection:
-                self.logger.debug("Retry interval not reached for %s, skipping", self.address)
-                return
+        # If a connection is already in progress, don't start another one
+        if self._connection_in_progress:
+            self.logger.debug(
+                "Connection already in progress, skipping refresh request"
+            )
+            return
 
-            self.logger.debug("Manual refresh requested for device %s", self.address)
+        # Get the last available service info for this device
+        service_info = bluetooth.async_last_service_info(self.hass, self.address)
+        if not service_info:
+            self.logger.warning(
+                "No service info available for device %s. Ensure device is within range and powered on. "
+                "This will cause sensors to show as unavailable.",
+                self.address,
+            )
+            self.last_update_success = False
+            self.async_update_listeners()
+            return
 
-            # Don't start if Home Assistant is shutting down
-            if self.hass.state not in (CoreState.starting, CoreState.running):
-                self.logger.debug("Skipping refresh - Home Assistant is not running")
-                return
-
-            # Get the last available service info
-            service_info = bluetooth.async_last_service_info(self.hass, self.address)
-            if not service_info:
-                self.logger.warning(
-                    "No service info available for device %s. Ensure device is within range and powered on.",
-                    self.address,
-                )
-                self.last_update_success = False
-                self.async_update_listeners()
-                return
-
-            try:
-                await self._async_poll(service_info)
-                self.last_update_success = True
-            except BleakOutOfConnectionSlotsError as exc:
-                self.logger.warning(
-                    "No connection slots for device %s: %s", self.address, exc
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, exc)
-                self.async_update_listeners()
-            except BleakConnectionError as exc:
-                self.logger.warning(
-                    "BLE connection failure for device %s: %s", self.address, exc
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, exc)
-                self.async_update_listeners()
-            except BleakError as err:
-                # Handle BLE connection errors gracefully
-                self.logger.warning(
-                    "BLE connection error for device %s: %s", self.address, err
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, err)
-                self.async_update_listeners()
-            except Exception as err:
-                self.last_update_success = False
-                error_traceback = traceback.format_exc()
-                self.logger.error(
-                    "Error refreshing device %s: %s\n%s",
-                    self.address,
-                    str(err),
-                    error_traceback,
-                )
-                if self.device:
-                    self.device.update_availability(False, err)
-                self.async_update_listeners()
+        try:
+            await self._async_poll(service_info)
+            self.last_update_success = True
+            # Notify listeners of the update
+            for update_callback in self._listeners:
+                update_callback()
+        except Exception as err:
+            self.last_update_success = False
+            error_traceback = traceback.format_exc()
+            self.logger.error(
+                "Error refreshing device %s: %s\n%s",
+                self.address,
+                str(err),
+                error_traceback,
+            )
+            if self.device:
+                self.device.update_availability(False, err)
+            self.async_update_listeners()
 
     def async_add_listener(
         self, update_callback: Callable[[], None], context: Any = None
     ) -> Callable[[], None]:
         """Listen for data updates."""
         if update_callback not in self._listeners:
-            self._listeners.append(update_callback)
-
-        def remove_listener() -> None:
+            self._listeners.append(update_callback)        def remove_listener() -> None:
             """Remove update callback."""
             if update_callback in self._listeners:
                 self._listeners.remove(update_callback)
@@ -215,20 +181,20 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     def async_update_listeners(self) -> None:
         """Update all registered listeners."""
-        # Don't update listeners if Home Assistant is not running (shutdown)
+        # Don't update listeners if Home Assistant is shutting down
         if self.hass.state not in (CoreState.starting, CoreState.running):
             self.logger.debug("Skipping listener updates - Home Assistant is shutting down")
             return
-
+            
         for update_callback in self._listeners:
             try:
                 update_callback()
             except Exception as e:
-                self.logger.debug("Error in listener callback during shutdown: %s", e)
+                # Don't let a single listener failure crash the coordinator
+                self.logger.debug("Error updating listener during shutdown: %s", e)
 
     def _schedule_refresh(self) -> None:
-        """Schedule a refresh with the update interval."""
-        if self._unsub_refresh:
+        """Schedule a refresh with the update interval."""        if self._unsub_refresh:
             self._unsub_refresh()
             self._unsub_refresh = None
 
@@ -240,17 +206,16 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def _handle_refresh_interval(self, _now=None):
         """Handle a refresh interval occurring."""
-        # Prevent refresh if Home Assistant is shutting down
+        # Check if Home Assistant is shutting down before processing
         try:
             if self.hass.state not in (CoreState.starting, CoreState.running):
-                self.logger.debug(
-                    "Skipping refresh interval - Home Assistant is shutting down"
-                )
+                self.logger.debug("Skipping refresh interval - Home Assistant is shutting down")
                 return
+            
             self.logger.debug("Regular interval refresh for %s", self.address)
             await self.async_request_refresh()
         except Exception as e:
-            # Expected during shutdown; prevents event loop errors
+            # Catch any exceptions during shutdown to prevent event loop issues
             self.logger.debug("Error during refresh interval (likely shutdown): %s", e)
 
     def async_start(self) -> Callable[[], None]:
@@ -267,12 +232,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         # We use the active update coordinator's start method
         # which already handles the bluetooth subscriptions
-        result = super().async_start()
-
-        # Schedule regular refreshs at our configured interval
+        result = super().async_start()        # Schedule regular refreshes at our configured interval
         self._schedule_refresh()
-
-        # Perform an initial refresh and track the task
+        
+        # Perform an initial refresh to get data as soon as possible
         self._request_refresh_task = self.hass.async_create_task(self.async_request_refresh())
 
         return result
@@ -281,16 +244,14 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         """Cancel the bluetooth subscription."""
         if hasattr(self, "_unsubscribe_bluetooth") and self._unsubscribe_bluetooth:
             self._unsubscribe_bluetooth()
-            self._unsubscribe_bluetooth = None
-
-    def async_stop(self) -> None:
+            self._unsubscribe_bluetooth = None    def async_stop(self) -> None:
         """Stop polling and clean up all resources."""
         self.logger.debug("Stopping coordinator for device %s", self.address)
-
-        # Prevent new operations
+        
+        # Mark that we're shutting down to prevent new operations
         self._connection_in_progress = False
-
-        # Cancel scheduled refresh to prevent further tasks
+        
+        # Cancel scheduled refresh first to prevent new tasks
         if self._unsub_refresh:
             try:
                 self._unsub_refresh()
@@ -299,37 +260,45 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             finally:
                 self._unsub_refresh = None
 
-        # Cancel in-flight refresh task if pending
-        if getattr(self, '_request_refresh_task', None) and \
-           not self._request_refresh_task.done():
+        # Cancel any ongoing refresh task with proper exception handling
+        if self._request_refresh_task and not self._request_refresh_task.done():
             try:
                 self._request_refresh_task.cancel()
+                # Wait a short time for the task to finish cancellation
+                # but don't wait if the event loop is closing
+                if hasattr(self.hass, 'loop') and self.hass.loop and not self.hass.loop.is_closed():
+                    try:
+                        # Create a timeout to prevent hanging during shutdown
+                        import asyncio
+                        asyncio.wait_for(asyncio.shield(self._request_refresh_task), timeout=0.1)
+                    except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+                        # Expected during shutdown - ignore these
+                        pass
             except Exception as e:
-                self.logger.debug("Error canceling in-flight refresh task: %s", e)
+                self.logger.debug("Error canceling refresh task: %s", e)
             finally:
                 self._request_refresh_task = None
 
-        # Cancel bluetooth subscriptions
+        # Cancel bluetooth subscriptions with error handling
         try:
             self._async_cancel_bluetooth_subscription()
         except Exception as e:
-            self.logger.debug("Error canceling Bluetooth subscription: %s", e)
+            self.logger.debug("Error canceling bluetooth subscription: %s", e)
 
         # Clean up listeners
         self._listeners = []
 
-        # Call parent cleanup safely
+        # Call parent cleanup with comprehensive error handling
         try:
             super().async_stop()
         except RuntimeError as e:
             if "Event loop is closed" in str(e):
-                self.logger.debug("Event loop already closed during shutdown - normal scenario")
+                self.logger.debug("Event loop already closed during shutdown - this is normal")
             else:
-                self.logger.debug("RuntimeError in parent async_stop: %s", e)
+                self.logger.debug("RuntimeError during parent async_stop: %s", e)
         except Exception as e:
-            self.logger.debug("Error during parent async_stop: %s", e)
-
-    @callback
+            # Log but don't raise to prevent shutdown issues
+            self.logger.debug("Error during parent async_stop: %s", e)    @callback
     def _needs_poll(
         self,
         service_info: BluetoothServiceInfoBleak,
@@ -337,7 +306,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
     ) -> bool:
         """Determine if device needs polling based on time since last poll."""
         # Only poll if hass is running and device is connectable
-        if self.hass.state != CoreState.running:
+        if self.hass.state not in (CoreState.starting, CoreState.running):
+            self.logger.debug("Skipping poll - Home Assistant state: %s", self.hass.state)
             return False
 
         # Check if we have a connectable device
@@ -436,22 +406,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
     async def _read_shunt_device(self, service_info: BluetoothServiceInfoBleak) -> bool:
         """Handle reading data for SmartShunt devices via BLE notifications + manufacturer packet."""
         device = self.device
-        # Prevent overlapping connection attempts
-        try:
-            client = await establish_connection(
-                BleakClientWithServiceCache,
-                service_info.device,
-                device.name or device.address,
-                max_attempts=3,
-            )
-        except BleakError as e:
-            self.logger.warning(
-                "BLE connection error for shunt device %s: %s", device.name, e
-            )
-            device.update_availability(False, e)
-            self.last_update_success = False
-            return False
-
+        # Establish connection with retry
+        client = await establish_connection(
+            BleakClientWithServiceCache,
+            service_info.device,
+            device.name or device.address,
+            max_attempts=3,
+        )
         try:
             # Collect notifications
             notification_event = asyncio.Event()
@@ -505,161 +466,177 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.logger.debug(
             "Polling %s device: %s (%s)",
             device.device_type,
-            device.name,
-            device.address,
+            device.name,            device.address,
         )
 
-        # Prevent overlapping connection attempts
+        # Initialize success and error variables
+        success = False
+        error = None
+        client = None
+
+        # Use bleak-retry-connector for more robust connection
         try:
+            # Establish connection with retry capability.  This helper
+            # retries a few times before giving up which greatly
+            # improves reliability when the device is busy.
             client = await establish_connection(
                 BleakClientWithServiceCache,
                 service_info.device,
                 device.name or device.address,
                 max_attempts=3,
             )
-        except (BleakConnectionError, BleakDBusError, BleakError) as e:
-            self.logger.warning(
-                "BLE connection error for device %s: %s", device.name, e
-            )
-            device.update_availability(False, e)
-            self.last_update_success = False
-            return False
 
-        # Existing logic continues...
-        any_command_succeeded = False
-        try:
-            self.logger.debug("Connected to device %s", device.name)
+            any_command_succeeded = False
 
-            # Create an event that will be set when notification data is received
-            notification_event = asyncio.Event()
-            notification_data = bytearray()
+            try:
+                self.logger.debug("Connected to device %s", device.name)
 
-            def notification_handler(sender, data):
-                notification_data.extend(data)
-                notification_event.set()
+                # Create an event that will be set when notification data is received
+                notification_event = asyncio.Event()
+                notification_data = bytearray()
 
-            # Subscribe to Modbus read characteristic
-            notify_uuid = RENOGY_READ_CHAR_UUID
-            await client.start_notify(notify_uuid, notification_handler)
+                def notification_handler(sender, data):
+                    notification_data.extend(data)
+                    notification_event.set()
 
-            # Iterate through each Modbus command defined for the
-            # current device type.  All results are gathered before
-            # the connection is closed.
-            for cmd_name, cmd in COMMANDS[self.device_type].items():
-                notification_data.clear()
-                notification_event.clear()
+                # Subscribe to Modbus read characteristic
+                notify_uuid = RENOGY_READ_CHAR_UUID
+                await client.start_notify(notify_uuid, notification_handler)
 
-                # Build and send the Modbus read request for this
-                # command.  The helper appends the CRC bytes.
-                modbus_request = ModbusUtils.create_read_request(
-                    DEFAULT_DEVICE_ID, *cmd
-                )
-                self.logger.debug(
-                    "Sending %s command: %s",
-                    cmd_name,
-                    list(modbus_request),
-                )
-                await client.write_gatt_char(
-                    RENOGY_WRITE_CHAR_UUID, modbus_request
-                )
+                # Iterate through each Modbus command defined for the
+                # current device type.  All results are gathered before
+                # the connection is closed.
+                for cmd_name, cmd in COMMANDS[self.device_type].items():
+                    notification_data.clear()
+                    notification_event.clear()
 
-                # Expected length = 3 header bytes + 2 * word_count
-                # data bytes + 2 byte CRC.
-                word_count = cmd[2]
-                expected_len = 3 + word_count * 2 + 2
-                start_time = self.hass.loop.time()
-
-                # Wait until the entire response has been received
-                # via notifications or until a timeout occurs.
-
-                try:
-                    while len(notification_data) < expected_len:
-                        remaining = MAX_NOTIFICATION_WAIT_TIME - (
-                            self.hass.loop.time() - start_time
-                        )
-                        if remaining <= 0:
-                            raise asyncio.TimeoutError()
-                        await asyncio.wait_for(
-                            notification_event.wait(), remaining
-                        )
-                        notification_event.clear()
-                except asyncio.TimeoutError:
-                    self.logger.info(
-                        "Timeout – only %s / %s bytes received for %s from device %s",
-                        len(notification_data),
-                        expected_len,
-                        cmd_name,
-                        device.name,
+                    # Build and send the Modbus read request for this
+                    # command.  The helper appends the CRC bytes.
+                    modbus_request = ModbusUtils.create_read_request(
+                        DEFAULT_DEVICE_ID, *cmd
                     )
-                    continue
-
-                # Slice the collected notifications in case extra
-                # bytes were received and pass them to the parser.
-                result_data = bytes(notification_data[:expected_len])
-                self.logger.debug(
-                    "Received %s data length: %s (expected %s)",
-                    cmd_name,
-                    len(result_data),
-                    expected_len,
-                )
-
-                # Parse and store the response on the device object
-                cmd_success = device.update_parsed_data(
-                    result_data,
-                    register=cmd[1],
-                    cmd_name=cmd_name,
-                )
-
-                if cmd_success:
-                    # Keep track of at least one successful command
                     self.logger.debug(
-                        "Successfully read and parsed %s data from device %s",
+                        "Sending %s command: %s",
                         cmd_name,
-                        device.name,
+                        list(modbus_request),
                     )
-                    any_command_succeeded = True
-                else:
-                    self.logger.info(
-                        "Failed to parse %s data from device %s",
-                        cmd_name,
-                        device.name,
+                    await client.write_gatt_char(
+                        RENOGY_WRITE_CHAR_UUID, modbus_request
                     )
 
-            await client.stop_notify(notify_uuid)
-            success = any_command_succeeded
-            if not success:
-                error = Exception("No commands completed successfully")
+                    # Expected length = 3 header bytes + 2 * word_count
+                    # data bytes + 2 byte CRC.
+                    word_count = cmd[2]
+                    expected_len = 3 + word_count * 2 + 2
+                    start_time = self.hass.loop.time()
 
-        except BleakError as e:
+                    # Wait until the entire response has been received
+                    # via notifications or until a timeout occurs.
+
+                    try:
+                        while len(notification_data) < expected_len:
+                            remaining = MAX_NOTIFICATION_WAIT_TIME - (
+                                self.hass.loop.time() - start_time
+                            )
+                            if remaining <= 0:
+                                raise asyncio.TimeoutError()
+                            await asyncio.wait_for(
+                                notification_event.wait(), remaining
+                            )
+                            notification_event.clear()
+                    except asyncio.TimeoutError:
+                        self.logger.info(
+                            "Timeout – only %s / %s bytes received for %s from device %s",
+                            len(notification_data),
+                            expected_len,
+                            cmd_name,
+                            device.name,
+                        )
+                        continue
+
+                    # Slice the collected notifications in case extra
+                    # bytes were received and pass them to the parser.
+                    result_data = bytes(notification_data[:expected_len])
+                    self.logger.debug(
+                        "Received %s data length: %s (expected %s)",
+                        cmd_name,
+                        len(result_data),
+                        expected_len,
+                    )
+
+                    # Parse and store the response on the device object
+                    cmd_success = device.update_parsed_data(
+                        result_data,
+                        register=cmd[1],
+                        cmd_name=cmd_name,
+                    )
+
+                    if cmd_success:
+                        # Keep track of at least one successful command
+                        self.logger.debug(
+                            "Successfully read and parsed %s data from device %s",
+                            cmd_name,
+                            device.name,
+                        )
+                        any_command_succeeded = True
+                    else:
+                        self.logger.info(
+                            "Failed to parse %s data from device %s",
+                            cmd_name,
+                            device.name,
+                        )
+
+                await client.stop_notify(notify_uuid)
+                success = any_command_succeeded
+                if not success:
+                    error = Exception("No commands completed successfully")
+
+            except BleakError as e:
+                self.logger.info(
+                    "BLE error with device %s: %s", device.name, str(e)
+                )
+                error = e
+                success = False
+            except Exception as e:
+                self.logger.error(
+                    "Error reading data from device %s: %s", device.name, str(e)
+                )
+                error = e
+                success = False
+            finally:
+                # BleakClientWithServiceCache handles disconnect in context manager
+                # but we need to ensure the client is disconnected
+                if client.is_connected:
+                    try:
+                        await client.disconnect()
+                        self.logger.debug(
+                            "Disconnected from device %s", device.name
+                        )
+                    except Exception as e:
+                        self.logger.debug(
+                            "Error disconnecting from device %s: %s",
+                            device.name,
+                            str(e),
+                        )
+                        # Don't override previous errors with disconnect errors
+                        if error is None:
+                            error = e
+
+        except (BleakError, asyncio.TimeoutError) as connection_error:
             self.logger.info(
-                "BLE error with device %s: %s", device.name, str(e)
-            )
-            error = e
-            success = False
-        except Exception as e:
-            self.logger.error(
-                "Error reading data from device %s: %s", device.name, str(e)
-            )
-            error = e
+                "Failed to establish connection with device %s: %s",
+                device.name,
+                str(connection_error),        
+              )
+            error = connection_error
             success = False
         finally:
-            # BleakClientWithServiceCache handles disconnect in context manager
-            # but we need to ensure the client is disconnected
-            if client.is_connected:
-                try:
+            # Ensure GATT client is disconnected
+            try:
+                if client and client.is_connected:
                     await client.disconnect()
-                    self.logger.debug(
-                        "Disconnected from device %s", device.name
-                    )
-                except Exception as e:
-                    self.logger.debug(
-                        "Error disconnecting from device %s: %s",
-                        device.name,
-                        str(e),
-                    )
-                    # Don't override previous errors with disconnect errors
-                    if error is None:
-                        error = e
+            except Exception:
+                pass
 
         # Always update the device availability and the coordinator's
         # success flag so entities can react appropriately.
@@ -686,34 +663,35 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
     async def _async_poll(self, service_info: BluetoothServiceInfoBleak) -> None:
         """Poll the device and notify listeners with new data."""
-        # Prevent overlapping polls
-        if self._connection_lock.locked():
-            self.logger.debug("Connection already in progress, skipping _async_poll")
+        # If a connection is already in progress, don't start another one
+        if self._connection_in_progress:
+            self.logger.debug("Connection already in progress, skipping poll")
             return
+
+        self.last_poll_time = datetime.now()
+        self.logger.debug(            "Polling device: %s (%s)", service_info.name, service_info.address
+        )
         
-        async with self._connection_lock:
-            self.last_poll_time = datetime.now()
-            self.logger.debug(
-                "Polling device: %s (%s)", service_info.name, service_info.address
-            )
-            # Read device data using service_info and Home Assistant's Bluetooth API
-            success = await self._read_device_data(service_info)
+        # Read device data using service_info and Home Assistant's Bluetooth API
+        success = await self._read_device_data(service_info)
 
-            if success and self.device and self.device.parsed_data:
-                self.logger.debug("Parsed data: %s", self.device.parsed_data)
+        if success and self.device and self.device.parsed_data:
+            # Log the parsed data for debugging
+            self.logger.debug("Parsed data: %s", self.device.parsed_data)
 
-                # Call the callback if available
-                if self.device_data_callback:
-                    try:
-                        await self.device_data_callback(self.device)
-                    except Exception as e:
-                        self.logger.error("Error in device data callback: %s", str(e))
+            # Call the callback if available
+            if self.device_data_callback:
+                try:
+                    await self.device_data_callback(self.device)
+                except Exception as e:
+                    self.logger.error("Error in device data callback: %s", str(e))
+            
+            # Update all listeners after successful data acquisition
+            self.async_update_listeners()
 
-                # Update all listeners after successful data acquisition
-                self.async_update_listeners()
-            else:
-                self.logger.info("Failed to retrieve data from %s", service_info.address)
-                self.last_update_success = False
+        else:
+            self.logger.info("Failed to retrieve data from %s", service_info.address)
+            self.last_update_success = False
 
     @callback
     def _async_handle_unavailable(
