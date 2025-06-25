@@ -38,6 +38,10 @@ from .const import (
     UNAVAILABLE_RETRY_INTERVAL,
     RENOGY_SHUNT_MANUF_ID,
     DeviceType,
+    RENOGY_SHUNT_SERVICE_UUID,
+    RENOGY_SHUNT_WRITE_CHAR_UUID,
+    RENOGY_SHUNT_NOTIFY_CHAR_UUID,
+    RENOGY_SHUNT_CCCD_UUID,
 )
 from .parser import parse_shunt_ble_packet, parse_shunt_packet
 from .device import RenogyBLEDevice
@@ -435,38 +439,41 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 received_packets.append(data)
                 notification_event.set()
 
-            # --- Enable notifications on the shunt characteristic (Android style) ---
-            await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
-            self.logger.debug("Started notify on shunt packet service UUID; waiting for notification...")
+            # --- Enable notifications on the correct notify characteristic ---
+            NOTIFY_CHAR_UUID = RENOGY_SHUNT_NOTIFY_CHAR_UUID
+            WRITE_CHAR_UUID = RENOGY_SHUNT_WRITE_CHAR_UUID
+            CCCD_UUID = RENOGY_SHUNT_CCCD_UUID
 
-            # 2. Write the CCCD descriptor to enable notifications on the device (explicit, as in Android)
+            await client.start_notify(NOTIFY_CHAR_UUID, _notif_handler)
+            self.logger.debug("Started notify on %s; waiting for notification...", NOTIFY_CHAR_UUID)
+
+            # Explicitly write to CCCD to enable notifications
             try:
-                cccd_uuid = "00002902-0000-1000-8000-00805f9b34fb"
-                char = client.services.get_characteristic(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+                char = client.services.get_characteristic(NOTIFY_CHAR_UUID)
                 if char is not None and hasattr(char, "descriptors"):
                     cccd = next(
-                        (d for d in char.descriptors if d.uuid.lower() == cccd_uuid),
+                        (d for d in char.descriptors if d.uuid.lower() == CCCD_UUID),
                         None,
                     )
                     if cccd is not None:
                         await client.write_gatt_descriptor(cccd.handle, b"\x01\x00")
-                        self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for shunt notifications (Android style)")
+                        self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for notifications")
             except Exception as e:
-                self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
+                self.logger.debug("Optional: Failed explicit CCCD write for notifications: %s", e)
 
-            # Try writing to the paired writable characteristic to trigger notification
+            # Write to the paired writable characteristic to trigger notification
             try:
-                await client.write_gatt_char("0000c111-0000-1000-8000-00805f9b34fb", b"\x00")
-                self.logger.debug("Wrote b'\\x00' to 0000c111-0000-1000-8000-00805f9b34fb to trigger notification")
+                await client.write_gatt_char(WRITE_CHAR_UUID, b"\x00")
+                self.logger.debug("Wrote b'\\x00' to %s to trigger notification", WRITE_CHAR_UUID)
             except Exception as e:
-                self.logger.debug("Failed to write to 0000c111-0000-1000-8000-00805f9b34fb: %s", e)
+                self.logger.debug("Failed to write to %s: %s", WRITE_CHAR_UUID, e)
 
-            # Optional: Try reading the characteristic to trigger notifications (some devices require this)
+            # Optional: Try reading the notify characteristic to trigger notifications
             try:
-                read_data = await client.read_gatt_char(RENOGY_SHUNT_PACKET_SERVICE_UUID)
-                self.logger.debug("Read from shunt packet service UUID after notify: %s", read_data)
+                read_data = await client.read_gatt_char(NOTIFY_CHAR_UUID)
+                self.logger.debug("Read from %s after notify: %s", NOTIFY_CHAR_UUID, read_data)
             except Exception as e:
-                self.logger.debug("Optional: Failed to read shunt packet service UUID after notify: %s", e)
+                self.logger.debug("Optional: Failed to read %s after notify: %s", NOTIFY_CHAR_UUID, e)
 
             try:
                 await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)

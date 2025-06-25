@@ -52,8 +52,11 @@ RENOGY_WRITE_CHAR_UUID = (
     "0000ffd1-0000-1000-8000-00805f9b34fb"  # Characteristic for writing commands
 )
 
-# SmartShunt notification service/characteristic UUID
-RENOGY_SHUNT_PACKET_SERVICE_UUID = "0000c211-0000-1000-8000-00805f9b34fb"
+# --- SmartShunt BLE Service and Characteristic UUIDs ---
+RENOGY_SHUNT_SERVICE_UUID = "0000c011-0000-1000-8000-00805f9b34fb"
+RENOGY_SHUNT_WRITE_CHAR_UUID = "0000c111-0000-1000-8000-00805f9b34fb"
+RENOGY_SHUNT_NOTIFY_CHAR_UUID = "0000c211-0000-1000-8000-00805f9b34fb"
+RENOGY_SHUNT_CCCD_UUID = "00002902-0000-1000-8000-00805f9b34fb"
 
 # Time in minutes to wait before attempting to reconnect to unavailable devices
 UNAVAILABLE_RETRY_INTERVAL = 10
