@@ -86,9 +86,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             logger=logger,
             address=address,
             needs_poll_method=self._needs_poll,
-            poll_method=self._async_poll,
-            mode=BluetoothScanningMode.ACTIVE,
-            connectable=True,        )
+            poll_method=self._async_poll,            mode=BluetoothScanningMode.ACTIVE,
+            connectable=True,
+        )
         self.device: Optional[RenogyBLEDevice] = None
         self.scan_interval = scan_interval
         self._device_type = device_type
@@ -97,15 +97,18 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.logger.debug(
             "Initialized coordinator for %s as %s with %ss interval",
             address,
-            device_type,
-            scan_interval,
-        )        # Add required properties for Home Assistant CoordinatorEntity compatibility
+            device_type,            scan_interval,
+        )
+        
+        # Add required properties for Home Assistant CoordinatorEntity compatibility
         self.last_update_success = True
         self.data: Dict[str, Any] = {}
         self._listeners = []
         self.update_interval = timedelta(seconds=scan_interval)
         self._unsub_refresh = None
-        self._request_refresh_task = None        # Add connection lock to prevent multiple concurrent connections
+        self._request_refresh_task = None
+        
+        # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
         self._connection_in_progress = False
 
@@ -362,7 +365,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
             await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
-            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)            # Build metrics
+            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+            
+            # Build metrics
             metrics: Dict[str, float | int | str] = {}
             for pkt in received_packets:
                 try:
@@ -403,13 +408,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.logger.debug(
             "Polling %s device: %s (%s)",
             device.device_type,
-            device.name,
-            device.address,
+            device.name,            device.address,
         )
 
         # Initialize success and error variables
         success = False
         error = None
+        client = None
 
         # Use bleak-retry-connector for more robust connection
         try:
@@ -563,8 +568,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             self.logger.info(
                 "Failed to establish connection with device %s: %s",
                 device.name,
-                str(connection_error),
-            )
+                str(connection_error),        
+              )
             error = connection_error
             success = False
         finally:
@@ -577,8 +582,19 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         # Always update the device availability and the coordinator's
         # success flag so entities can react appropriately.
-        device.update_availability(success, error)
-        self.last_update_success = success
+        
+        # Use local variables with guaranteed initialization to avoid UnboundLocalError
+        final_success = locals().get('success', False)
+        final_error = locals().get('error', Exception("Unknown error in _read_modbus_device"))
+        
+        try:
+            device.update_availability(final_success, final_error)
+            self.last_update_success = final_success
+        except Exception as e:
+            # Fallback if there's any issue with device availability update
+            self.logger.error("Error updating device availability: %s", e)
+            device.update_availability(False, Exception(f"Update error: {e}"))
+            self.last_update_success = False
 
         # Update coordinator data if successful
         if success and device.parsed_data:
@@ -595,9 +611,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             return
 
         self.last_poll_time = datetime.now()
-        self.logger.debug(
-            "Polling device: %s (%s)", service_info.name, service_info.address
-        )        # Read device data using service_info and Home Assistant's Bluetooth API
+        self.logger.debug(            "Polling device: %s (%s)", service_info.name, service_info.address
+        )
+        
+        # Read device data using service_info and Home Assistant's Bluetooth API
         success = await self._read_device_data(service_info)
 
         if success and self.device and self.device.parsed_data:
@@ -609,7 +626,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 try:
                     await self.device_data_callback(self.device)
                 except Exception as e:
-                    self.logger.error("Error in device data callback: %s", str(e))            # Update all listeners after successful data acquisition
+                    self.logger.error("Error in device data callback: %s", str(e))
+            
+            # Update all listeners after successful data acquisition
             self.async_update_listeners()
 
         else:
