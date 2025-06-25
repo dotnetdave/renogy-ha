@@ -454,6 +454,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             except Exception as e:
                 self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
 
+            # Try writing to the paired writable characteristic to trigger notification
+            try:
+                await client.write_gatt_char("0000c111-0000-1000-8000-00805f9b34fb", b"\x00")
+                self.logger.debug("Wrote b'\\x00' to 0000c111-0000-1000-8000-00805f9b34fb to trigger notification")
+            except Exception as e:
+                self.logger.debug("Failed to write to 0000c111-0000-1000-8000-00805f9b34fb: %s", e)
+
             # Optional: Try reading the characteristic to trigger notifications (some devices require this)
             try:
                 read_data = await client.read_gatt_char(RENOGY_SHUNT_PACKET_SERVICE_UUID)
