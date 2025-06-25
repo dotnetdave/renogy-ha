@@ -38,10 +38,9 @@ from .const import (
     UNAVAILABLE_RETRY_INTERVAL,
     RENOGY_SHUNT_MANUF_ID,
     DeviceType,
-    RENOGY_SHUNT_SERVICE_UUID,
     RENOGY_SHUNT_WRITE_CHAR_UUID,
     RENOGY_SHUNT_NOTIFY_CHAR_UUID,
-    RENOGY_SHUNT_CCCD_UUID,
+    RENOGY_SHUNT_CCCD_UUID, 
 )
 from .parser import parse_shunt_ble_packet, parse_shunt_packet
 from .device import RenogyBLEDevice
