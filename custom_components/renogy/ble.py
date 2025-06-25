@@ -435,21 +435,22 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 received_packets.append(data)
                 notification_event.set()
 
-            # --- Explicitly write to CCCD to enable notifications ---
+            # --- Enable notifications on the shunt characteristic (Android style) ---
+            # 1. Enable notifications in the BLE stack (handled by Bleak's start_notify)
+            await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
+            self.logger.debug("Started notify on shunt packet service UUID; waiting for notification...")
+
+            # 2. Write the CCCD descriptor to enable notifications on the device (explicit, as in Android)
             try:
-                # bleak handles CCCD automatically, but for robustness, do it explicitly
                 cccd_uuid = "00002902-0000-1000-8000-00805f9b34fb"
                 char = client.services.get_characteristic(RENOGY_SHUNT_PACKET_SERVICE_UUID)
                 if char is not None:
                     descriptor = char.get_descriptor(cccd_uuid)
                     if descriptor is not None:
                         await client.write_gatt_descriptor(descriptor.handle, b"\x01\x00")
-                        self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for shunt notifications")
+                        self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for shunt notifications (Android style)")
             except Exception as e:
                 self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
-
-            await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
-            self.logger.debug("Started notify on shunt packet service UUID; waiting for notification...")
 
             # Try writing to the paired writable characteristic to trigger notification
             try:
