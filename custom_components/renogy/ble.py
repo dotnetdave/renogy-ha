@@ -362,15 +362,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
             await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
-            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
-
-            # Build metrics
+            await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)            # Build metrics
             metrics: Dict[str, float | int | str] = {}
             for pkt in received_packets:
                 try:
                     metrics.update(parse_shunt_ble_packet(pkt))
                 except ValueError:
-                    LOGGER.warning("Invalid SmartShunt BLE packet: %s", pkt)
+                    self.logger.warning("Invalid SmartShunt BLE packet: %s", pkt)
 
             manu = service_info.advertisement.manufacturer_data.get(
                 RENOGY_SHUNT_MANUF_ID, b""
@@ -378,16 +376,16 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             try:
                 metrics.update(parse_shunt_packet(bytes(manu)))
             except ValueError:
-                LOGGER.warning("Invalid SmartShunt manufacturer packet: %s", manu)
+                self.logger.warning("Invalid SmartShunt manufacturer packet: %s", manu)
 
             self.device.parsed_data = metrics
             self.data = dict(metrics)
             self.device.update_availability(True, None)
             self.last_update_success = True
-            LOGGER.debug("Parsed SmartShunt data: %s", metrics)
+            self.logger.debug("Parsed SmartShunt data: %s", metrics)
             return True
         except (BleakError, asyncio.TimeoutError, ValueError) as err:
-            LOGGER.warning("Shunt read failed: %s", err)
+            self.logger.warning("Shunt read failed: %s", err)
             self.device.update_availability(False, err)
             self.last_update_success = False
             return False
