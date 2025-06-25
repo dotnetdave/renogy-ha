@@ -480,9 +480,7 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
         else:
             # If we don't have a device yet, use coordinator address for unique ID
             self._attr_unique_id = f"{coordinator.address}_{description.key}"
-            self._attr_name = f"Renogy {description.name}"
-
-            # Set up basic device info based on coordinator
+            self._attr_name = f"Renogy {description.name}"            # Set up basic device info based on coordinator
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, coordinator.address)},
                 name=f"Renogy {device_type.capitalize()}",
@@ -527,7 +525,9 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
             )
             LOGGER.debug("Updated device info with real name: %s", self._device.name)
 
-        return self._device    @property
+        return self._device
+
+    @property
     def available(self) -> bool:
         """Return if the sensor is available."""
         # Basic coordinator availability check
