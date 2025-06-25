@@ -137,69 +137,59 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         async with self._connection_lock:
             self.logger.debug("Acquired connection lock for device %s", self.address)
-            # Skip if device not ready for retry
-            if self.device and not self.device.should_retry_connection:
-                self.logger.debug("Retry interval not reached for %s, skipping", self.address)
-                return
-
-            self.logger.debug("Manual refresh requested for device %s", self.address)
-
-            # Don't start if Home Assistant is shutting down
-            if self.hass.state not in (CoreState.starting, CoreState.running):
-                self.logger.debug("Skipping refresh - Home Assistant is not running")
-                return
-
-            # Get the last available service info
-            service_info = bluetooth.async_last_service_info(self.hass, self.address)
-            if not service_info:
-                self.logger.warning(
-                    "No service info available for device %s. Ensure device is within range and powered on.",
-                    self.address,
-                )
-                self.last_update_success = False
-                self.async_update_listeners()
-                return
-
             try:
-                self.logger.debug("Polling device %s with service info: %s", self.address, service_info)
-                await self._async_poll(service_info)
-                self.last_update_success = True
-            except BleakOutOfConnectionSlotsError as exc:
-                self.logger.warning(
-                    "No connection slots for device %s: %s", self.address, exc
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, exc)
-                self.async_update_listeners()
-            except BleakConnectionError as exc:
-                self.logger.warning(
-                    "BLE connection failure for device %s: %s", self.address, exc
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, exc)
-                self.async_update_listeners()
-            except BleakError as err:
-                self.logger.warning(
-                    "BLE connection error for device %s: %s", self.address, err
-                )
-                self.last_update_success = False
-                if self.device:
-                    self.device.update_availability(False, err)
-                self.async_update_listeners()
-            except Exception as err:
-                self.last_update_success = False
-                error_traceback = traceback.format_exc()
-                self.logger.error(
-                    "Error refreshing device %s: %s\n%s",
-                    self.address,
-                    str(err),
-                    error_traceback,
-                )
-                if self.device:
-                    self.device.update_availability(False, err)
-                self.async_update_listeners()
+                # Skip if device not ready for retry
+                if self.device and not self.device.should_retry_connection:
+                    self.logger.debug("Retry interval not reached for %s, skipping", self.address)
+                    return
+
+                self.logger.debug("Manual refresh requested for device %s", self.address)
+
+                # Don't start if Home Assistant is shutting down
+                if self.hass.state not in (CoreState.starting, CoreState.running):
+                    self.logger.debug("Skipping refresh - Home Assistant is not running")
+                    return
+
+                # Get the last available service info
+                service_info = bluetooth.async_last_service_info(self.hass, self.address)
+                if not service_info:
+                    self.logger.warning(
+                        "No service info available for device %s. Ensure device is within range and powered on.",
+                        self.address,
+                    )
+                    self.last_update_success = False
+                    self.async_update_listeners()
+                    return
+
+                # Wait and poll for connection availability
+                for attempt in range(10):
+                    if self.device and self.device.is_available():
+                        self.logger.debug("Device %s is available on attempt %d", self.address, attempt + 1)
+                        break
+                    self.logger.debug("Device %s not available, waiting... (attempt %d)", self.address, attempt + 1)
+                    await asyncio.sleep(1)
+                else:
+                    self.logger.warning("Device %s did not become available after 10 seconds", self.address)
+                    self.last_update_success = False
+                    self.async_update_listeners()
+                    return
+
+                try:
+                    self.logger.debug("Polling device %s with service info: %s", self.address, service_info)
+                    await self._async_poll(service_info)
+                    self.last_update_success = True
+                except Exception as err:
+                    self.last_update_success = False
+                    error_traceback = traceback.format_exc()
+                    self.logger.error(
+                        "Error refreshing device %s: %s\n%s",
+                        self.address,
+                        str(err),
+                        error_traceback,
+                    )
+                    if self.device:
+                        self.device.update_availability(False, err)
+                    self.async_update_listeners()
             finally:
                 self.logger.debug("Finished async_request_refresh for device %s", self.address)
 
@@ -698,18 +688,12 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         async with self._connection_lock:
             self.logger.debug("Acquired connection lock for polling device %s", self.address)
-            self.last_poll_time = datetime.now()
-            self.logger.debug(
-                "Polling device: %s (%s)", service_info.name, service_info.address
-            )
             try:
-                success = await self._read_device_data(service_info)
-                if success and self.device and self.device.parsed_data:
-                    self.logger.debug("Polling successful for device %s", self.address)
-                else:
-                    self.logger.debug("Polling failed or no data for device %s", self.address)
-            except Exception as e:
-                self.logger.error("Error during _async_poll for device %s: %s", self.address, e)
+                await self._read_device_data(service_info)
+            except Exception as err:
+                self.logger.error(
+                    "Error during polling for device %s: %s", self.address, str(err)
+                )
             finally:
                 self.logger.debug("Finished _async_poll for device %s", self.address)
 
