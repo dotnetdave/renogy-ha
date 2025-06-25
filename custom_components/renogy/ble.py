@@ -423,11 +423,18 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             received_packets: list[bytes] = []
 
             def _notif_handler(_: int, data: bytes) -> None:
+                self.logger.debug("Notification received: %s", data)
                 received_packets.append(data)
                 notification_event.set()
 
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
-            await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
+
+            try:
+                await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
+            except asyncio.TimeoutError:
+                self.logger.warning("Timeout waiting for notification from device %s", device.name)
+                return False
+
             await client.stop_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID)
 
             metrics: Dict[str, float | int | str] = {}
