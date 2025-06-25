@@ -449,6 +449,21 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
 
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
+            self.logger.debug("Started notify on shunt packet service UUID; waiting for notification...")
+
+            # Try writing to the paired writable characteristic to trigger notification
+            try:
+                await client.write_gatt_char("0000c111-0000-1000-8000-00805f9b34fb", b"\x00")
+                self.logger.debug("Wrote b'\\x00' to 0000c111-0000-1000-8000-00805f9b34fb to trigger notification")
+            except Exception as e:
+                self.logger.debug("Failed to write to 0000c111-0000-1000-8000-00805f9b34fb: %s", e)
+
+            # Optional: Try reading the characteristic to trigger notifications (some devices require this)
+            try:
+                read_data = await client.read_gatt_char(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+                self.logger.debug("Read from shunt packet service UUID after notify: %s", read_data)
+            except Exception as e:
+                self.logger.debug("Optional: Failed to read shunt packet service UUID after notify: %s", e)
 
             try:
                 await asyncio.wait_for(notification_event.wait(), MAX_NOTIFICATION_WAIT_TIME)
