@@ -452,7 +452,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 char = client.services.get_characteristic(NOTIFY_CHAR_UUID)
                 if char is not None and hasattr(char, "descriptors"):
                     cccd = next(
-                        (d for d in char.descriptors if d.uuid.lower() == CCCD_UUID),
+                        (d for d in char.descriptors if d.uuid.upper() == CCCD_UUID.upper()),
                         None,
                     )
                     if cccd is not None:
@@ -463,8 +463,8 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
             # Write to the paired writable characteristic to trigger notification
             try:
-                await client.write_gatt_char(WRITE_CHAR_UUID, b"\x00")
-                self.logger.debug("Wrote b'\\x00' to %s to trigger notification", WRITE_CHAR_UUID)
+                await client.write_gatt_char(WRITE_CHAR_UUID, b"\x01\x00")
+                self.logger.debug("Wrote bx01x00' to %s to trigger notification", WRITE_CHAR_UUID)
             except Exception as e:
                 self.logger.debug("Failed to write to %s: %s", WRITE_CHAR_UUID, e)
 
