@@ -407,6 +407,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             device.address,
         )
 
+        # Initialize success and error variables
+        success = False
+        error = None
+
         # Use bleak-retry-connector for more robust connection
         try:
             # Establish connection with retry capability.  This helper
