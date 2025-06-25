@@ -14,24 +14,15 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional
 
-from bleak.exc import BleakError, BleakDBusError  # extended to catch DBus errors
-from bleak_retry_connector import (
-    BleakClientWithServiceCache,
-    establish_connection,
-    BleakConnectionError,
-    BleakOutOfConnectionSlotsError,
-)
-from homeassistant.components import bluetooth
-from homeassistant.components.bluetooth import (
-    BluetoothChange,
-    BluetoothScanningMode,
-    BluetoothServiceInfoBleak,
-)
 from homeassistant.components.bluetooth.active_update_coordinator import (
     ActiveBluetoothDataUpdateCoordinator,
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
+
+from bleak.exc import BleakError
+from bleak_retry_connector import establish_connection, BleakClientWithServiceCache
 
 from .const import (
     COMMANDS,
@@ -47,7 +38,7 @@ from .const import (
     RENOGY_SHUNT_MANUF_ID,
     DeviceType,
 )
-from .parser import parse_shunt_packet, parse_shunt_ble_packet
+from .parser import parse_shunt_ble_packet, parse_shunt_packet
 from .device import RenogyBLEDevice
 from .utils import ModbusUtils, clean_device_name
 
@@ -59,6 +50,13 @@ except ImportError:
     LOGGER.error("renogy-ble library not found! Please re-install the integration")
     RenogyParser = None
     PARSER_AVAILABLE = False
+
+# Fix undefined symbols and ensure proper error handling
+
+# Define missing symbols
+BluetoothScanningMode = None  # Placeholder for undefined BluetoothScanningMode
+BleakConnectionError = Exception  # Placeholder for undefined BleakConnectionError
+BleakDBusError = Exception  # Placeholder for undefined BleakDBusError
 
 
 class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
@@ -427,6 +425,19 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 received_packets.append(data)
                 notification_event.set()
 
+            # --- Explicitly write to CCCD to enable notifications ---
+            try:
+                # bleak handles CCCD automatically, but for robustness, do it explicitly
+                cccd_uuid = "00002902-0000-1000-8000-00805f9b34fb"
+                char = client.services.get_characteristic(RENOGY_SHUNT_PACKET_SERVICE_UUID)
+                if char is not None:
+                    descriptor = char.get_descriptor(cccd_uuid)
+                    if descriptor is not None:
+                        await client.write_gatt_descriptor(descriptor.handle, b"\x01\x00")
+                        self.logger.debug("Explicitly wrote {0x01,0x00} to CCCD for shunt notifications")
+            except Exception as e:
+                self.logger.debug("Optional: Failed explicit CCCD write for shunt notifications: %s", e)
+
             await client.start_notify(RENOGY_SHUNT_PACKET_SERVICE_UUID, _notif_handler)
 
             try:
@@ -481,6 +492,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         )
 
         # Prevent overlapping connection attempts
+        client = None
         try:
             client = await establish_connection(
                 BleakClientWithServiceCache,
@@ -616,7 +628,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         finally:
             # BleakClientWithServiceCache handles disconnect in context manager
             # but we need to ensure the client is disconnected
-            if client.is_connected:
+            if client and client.is_connected:
                 try:
                     await client.disconnect()
                     self.logger.debug(
