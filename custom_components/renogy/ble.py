@@ -105,11 +105,11 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self._listeners = []
         self.update_interval = timedelta(seconds=scan_interval)
         self._unsub_refresh = None
-        self._request_refresh_task = None
-
-        # Add connection lock to prevent multiple concurrent connections
+        self._request_refresh_task = None        # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
-        self._connection_in_progress = False    @property
+        self._connection_in_progress = False
+
+    @property
     def device_type(self) -> str:
         """Get the device type from configuration."""
         return self._device_type

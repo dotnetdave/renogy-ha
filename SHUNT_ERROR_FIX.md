@@ -17,38 +17,45 @@ The error was occurring in the `_read_shunt_device` method in `ble.py` at line 3
 
 1. **Inconsistent Logger Usage**: The method was using `LOGGER.warning()` (imported from `const.py`) instead of `self.logger.warning()` (the coordinator's logger instance)
 2. **Missing Error Details**: The error message was appearing without the actual exception details
-3. **Code Formatting Issues**: Some lines were missing proper newlines causing syntax errors
+3. **Code Formatting Issues**: Some lines were missing proper newlines causing syntax errors that prevented the module from loading
 
 ## Specific Problems Found
 1. Line 371: `LOGGER.warning("Invalid SmartShunt BLE packet: %s", pkt)` - should use `self.logger`
 2. Line 379: `LOGGER.warning("Invalid SmartShunt manufacturer packet: %s", manu)` - should use `self.logger` 
 3. Line 385: `LOGGER.debug("Parsed SmartShunt data: %s", metrics)` - should use `self.logger`
 4. Line 389: `LOGGER.warning("Shunt read failed: %s", err)` - should use `self.logger`
+5. Line 112: Missing newline between `self._connection_in_progress = False` and `@property` decorator
 
 ## Fix Applied
-Changed all instances of `LOGGER` to `self.logger` in the `_read_shunt_device` method:
+Changed all instances of `LOGGER` to `self.logger` in the `_read_shunt_device` method and fixed formatting issues:
 
 ```python
 # Before:
 LOGGER.warning("Shunt read failed: %s", err)
+self._connection_in_progress = False    @property
 
 # After:  
 self.logger.warning("Shunt read failed: %s", err)
+self._connection_in_progress = False
+
+@property
 ```
 
 This ensures that:
 - Error messages include proper exception details
-- Logging uses the correct logger instance with proper context
+- Logging uses the correct logger instance with proper context  
 - Log messages appear with the correct source attribution
+- The module can be imported without syntax errors
 
 ## Files Modified
 - `custom_components/renogy/ble.py` - Fixed logger references in `_read_shunt_device` method
 
 ## Expected Result
 After this fix:
-1. Shunt read error messages will include the actual error details
-2. Error logs will properly show the source as the coordinator rather than const.py
-3. SmartShunt devices will have better error visibility for debugging BLE connection issues
+1. The integration will load without import errors
+2. Shunt read error messages will include the actual error details
+3. Error logs will properly show the source as the coordinator rather than const.py
+4. SmartShunt devices will have better error visibility for debugging BLE connection issues
 
 ## Testing
 - ✅ File compiles without syntax errors
