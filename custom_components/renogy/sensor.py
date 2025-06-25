@@ -364,34 +364,7 @@ async def async_setup_entry(
     device_type = config_entry.data.get(CONF_DEVICE_TYPE, DEFAULT_DEVICE_TYPE)
     LOGGER.debug("Setting up sensors for device type: %s", device_type)
 
-    # Try to wait for a real device name before creating entities
-    # This helps ensure entity IDs will match the real device name
-    if (
-        not coordinator.device
-        or coordinator.device.name.startswith("Unknown")
-        or not coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
-    ):
-        LOGGER.debug("Waiting for real device name before creating entities...")
-        # Force an immediate refresh to try getting device info
-        await coordinator.async_request_refresh()
-
-        # Wait for a short time to see if we can get the real device name
-        # We'll wait up to 10 seconds, checking every second
-        real_name_found = False
-        for _ in range(10):
-            await asyncio.sleep(1)
-            if coordinator.device and coordinator.device.name.startswith(
-                RENOGY_NAME_PREFIXES
-            ):
-                LOGGER.debug("Real device name found: %s", coordinator.device.name)
-                real_name_found = True
-                break
-
-        if not real_name_found:
-            LOGGER.debug(
-                "No real device name found after waiting. Using generic name for entities."
-            )
-
+    # Create entities immediately without waiting for device name
     # Now create entities with the best name we have
     if coordinator.device and (
         coordinator.device.name.startswith(RENOGY_NAME_PREFIXES)
@@ -411,6 +384,7 @@ async def async_setup_entry(
         async_add_entities(device_entities)
     else:
         LOGGER.warning("No entities were created")
+    return True
 
 
 def create_entities_helper(
@@ -553,25 +527,45 @@ class RenogyBLESensor(CoordinatorEntity, SensorEntity):
             )
             LOGGER.debug("Updated device info with real name: %s", self._device.name)
 
-        return self._device
-
-    @property
+        return self._device    @property
     def available(self) -> bool:
         """Return if the sensor is available."""
         # Basic coordinator availability check
         if not self.coordinator.last_update_success:
+            LOGGER.debug(
+                "Sensor %s unavailable: coordinator last_update_success is False",
+                self.name
+            )
             return False
 
         # Check device availability if we have a device
-        if self._device and not self._device.is_available:
+        device = self.device
+        if device and not device.is_available:
+            LOGGER.debug(
+                "Sensor %s unavailable: device %s is not available",
+                self.name, device.name
+            )
             return False
 
         # For the actual data, check either the device's parsed_data or coordinator's data
         data_available = False
-        if self._device and self._device.parsed_data:
+        if device and device.parsed_data:
             data_available = True
+            LOGGER.debug(
+                "Sensor %s available: device has parsed_data with %d keys",
+                self.name, len(device.parsed_data)
+            )
         elif self.coordinator.data:
             data_available = True
+            LOGGER.debug(
+                "Sensor %s available: coordinator has data with %d keys",
+                self.name, len(self.coordinator.data)
+            )
+        else:
+            LOGGER.debug(
+                "Sensor %s unavailable: no data in device.parsed_data or coordinator.data",
+                self.name
+            )
 
         return data_available
 

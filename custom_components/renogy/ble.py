@@ -88,11 +88,10 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             needs_poll_method=self._needs_poll,
             poll_method=self._async_poll,
             mode=BluetoothScanningMode.ACTIVE,
-            connectable=True,
-        )
+            connectable=True,        )
         self.device: Optional[RenogyBLEDevice] = None
         self.scan_interval = scan_interval
-        self.device_type = device_type
+        self._device_type = device_type
         self.last_poll_time: Optional[datetime] = None
         self.device_data_callback = device_data_callback
         self.logger.debug(
@@ -100,10 +99,9 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             address,
             device_type,
             scan_interval,
-        )
-
-        # Add required properties for Home Assistant CoordinatorEntity compatibility
+        )        # Add required properties for Home Assistant CoordinatorEntity compatibility
         self.last_update_success = True
+        self.data: Dict[str, Any] = {}
         self._listeners = []
         self.update_interval = timedelta(seconds=scan_interval)
         self._unsub_refresh = None
@@ -111,9 +109,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         # Add connection lock to prevent multiple concurrent connections
         self._connection_lock = asyncio.Lock()
-        self._connection_in_progress = False
-
-    @property
+        self._connection_in_progress = False    @property
     def device_type(self) -> str:
         """Get the device type from configuration."""
         return self._device_type
@@ -137,11 +133,13 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         # Get the last available service info for this device
         service_info = bluetooth.async_last_service_info(self.hass, self.address)
         if not service_info:
-            self.logger.error(
-                "No service info available for device %s. Ensure device is within range and powered on.",
+            self.logger.warning(
+                "No service info available for device %s. Ensure device is within range and powered on. "
+                "This will cause sensors to show as unavailable.",
                 self.address,
             )
             self.last_update_success = False
+            self.async_update_listeners()
             return
 
         try:
@@ -153,7 +151,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         except Exception as err:
             self.last_update_success = False
             error_traceback = traceback.format_exc()
-            self.logger.debug(
+            self.logger.error(
                 "Error refreshing device %s: %s\n%s",
                 self.address,
                 str(err),
@@ -161,6 +159,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             )
             if self.device:
                 self.device.update_availability(False, err)
+            self.async_update_listeners()
 
     def async_add_listener(
         self, update_callback: Callable[[], None], context: Any = None
@@ -596,9 +595,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
         self.last_poll_time = datetime.now()
         self.logger.debug(
             "Polling device: %s (%s)", service_info.name, service_info.address
-        )
-
-        # Read device data using service_info and Home Assistant's Bluetooth API
+        )        # Read device data using service_info and Home Assistant's Bluetooth API
         success = await self._read_device_data(service_info)
 
         if success and self.device and self.device.parsed_data:
@@ -610,9 +607,7 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
                 try:
                     await self.device_data_callback(self.device)
                 except Exception as e:
-                    self.logger.error("Error in device data callback: %s", str(e))
-
-            # Update all listeners after successful data acquisition
+                    self.logger.error("Error in device data callback: %s", str(e))            # Update all listeners after successful data acquisition
             self.async_update_listeners()
 
         else:
