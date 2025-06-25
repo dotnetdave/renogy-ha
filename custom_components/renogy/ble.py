@@ -19,7 +19,8 @@ from homeassistant.components.bluetooth.active_update_coordinator import (
 )
 from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
+from homeassistant.components.bluetooth import BluetoothServiceInfoBleak, BluetoothScanningMode
+from homeassistant.components import bluetooth
 
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection, BleakClientWithServiceCache
@@ -54,7 +55,6 @@ except ImportError:
 # Fix undefined symbols and ensure proper error handling
 
 # Define missing symbols
-BluetoothScanningMode = None  # Placeholder for undefined BluetoothScanningMode
 BleakConnectionError = Exception  # Placeholder for undefined BleakConnectionError
 BleakDBusError = Exception  # Placeholder for undefined BleakDBusError
 
