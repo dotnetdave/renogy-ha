@@ -4,6 +4,9 @@
   "bluetooth": [
     {
       "local_name": "BT-TH-*"
+    },
+    {
+      "local_name": "RTM*"
     }
   ],
   "codeowners": ["@IAmTheMitchell"],
