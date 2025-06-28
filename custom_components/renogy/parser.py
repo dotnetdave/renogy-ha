@@ -58,6 +58,11 @@ def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
     """Parse a SmartShunt BLE notification packet from characteristic FFF1."""
     LOGGER.debug("Parsing BLE packet: %s", data)
 
+    # Filter out ASCII status strings like b"AT+NM=..." which aren't valid data
+    if len(data) >= 2 and data[:2] == b"AT":
+        LOGGER.debug("Ignoring ASCII status packet: %s", data)
+        raise ValueError("status packet")
+
     if len(data) < 4:
         LOGGER.error("Packet too short to parse: %s", data)
         raise ValueError("packet too short")
