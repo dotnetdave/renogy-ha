@@ -701,12 +701,22 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
 
         return success
 
-    async def _async_poll(self, service_info: BluetoothServiceInfoBleak) -> None:
+    async def _async_poll(
+        self, service_info: BluetoothServiceInfoBleak | None = None
+    ) -> None:
         """Poll the device."""
         # If a connection is already in progress, don't start another one
         if self._connection_in_progress:
             self.logger.debug("Connection already in progress, skipping poll")
             return
+
+        if service_info is None:
+            service_info = bluetooth.async_last_service_info(self.hass, self.address)
+            if not service_info:
+                self.logger.warning(
+                    "No service info available for %s", self.address
+                )
+                return
 
         self.last_poll_time = datetime.now()
         self.logger.debug(
