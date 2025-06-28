@@ -4,6 +4,12 @@
   "bluetooth": [
     {
       "local_name": "BT-TH-*"
+    },
+    {
+      "local_name": "RTM*"
+    },
+    {
+      "service_uuid": "0000c011-0000-1000-8000-00805f9b34fb"
     }
   ],
   "codeowners": ["@IAmTheMitchell"],

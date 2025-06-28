@@ -460,12 +460,12 @@ class RenogyActiveBluetoothCoordinator(ActiveBluetoothDataUpdateCoordinator):
             except Exception as e:
                 self.logger.debug("Optional: Failed explicit CCCD write for notifications: %s", e)
 
-            # # Write to the paired writable characteristic to trigger notification
-            # try:
-            #     await client.write_gatt_char(WRITE_CHAR_UUID, b"\x01\x00")
-            #     self.logger.debug("Wrote bx01x00' to %s to trigger notification", WRITE_CHAR_UUID)
-            # except Exception as e:
-            #     self.logger.debug("Failed to write to %s: %s", WRITE_CHAR_UUID, e)
+            # Write to the paired writable characteristic to trigger notification
+            try:
+                await client.write_gatt_char(WRITE_CHAR_UUID, b"\x01\x00")
+                self.logger.debug("Wrote b'\\x01\\x00' to %s to trigger notification", WRITE_CHAR_UUID)
+            except Exception as e:
+                self.logger.debug("Failed to write to %s: %s", WRITE_CHAR_UUID, e)
 
             # # Optional: Try reading the notify characteristic to trigger notifications
             # try:
