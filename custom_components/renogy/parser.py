@@ -63,6 +63,29 @@ def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
         LOGGER.debug("Ignoring ASCII status packet: %s", data)
         raise ValueError("status packet")
 
+    # Some shunts use an alternate header starting with ``b"BW\x01"``.
+    # The next byte is the message type and the final byte is a parity/CRC.
+    if data.startswith(b"BW\x01") and len(data) >= 6:
+        msg_type = data[3]
+        payload = data[4:-1]  # strip trailing parity byte
+        LOGGER.debug(
+            "Detected BW header, msg_type=0x%02X, payload=%s", msg_type, payload
+        )
+        metrics: Dict[str, float | int | str] = {"packetType": f"0x{msg_type:02X}"}
+
+        if msg_type == 0x05:
+            metrics["battery_voltage"] = int.from_bytes(payload, "big") / 1000
+            return metrics
+        if msg_type == 0x04:
+            metrics["discharge_amps"] = int.from_bytes(payload, "big", signed=True) / 1000
+            return metrics
+        if msg_type == 0x03:
+            metrics["state_of_charge"] = int.from_bytes(payload, "big") / 100
+            return metrics
+
+        LOGGER.error("Unsupported BW msg_type: 0x%02X", msg_type)
+        raise ValueError(f"unsupported bw msg: 0x{msg_type:02X}")
+
     if len(data) < 4:
         LOGGER.error("Packet too short to parse: %s", data)
         raise ValueError("packet too short")

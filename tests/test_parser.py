@@ -102,6 +102,18 @@ def test_parse_shunt_ble_packet_group_soc():
     assert result["state_of_charge"] == 30.5
 
 
+def test_parse_shunt_ble_packet_ascii_status():
+    with pytest.raises(ValueError):
+        parse_shunt_ble_packet(b"AT+NM=BW-RCS0005219\r\n")
+
+
+def test_parse_shunt_ble_packet_bw_header():
+    data = b"BW\x01\x05\x00\x13\x88\x00"
+    result = parse_shunt_ble_packet(data)
+    assert result["packetType"] == "0x05"
+    assert result["battery_voltage"] == 5.0
+
+
 def test_parse_shunt_ble_messages_merge():
     packets = [
         bytes.fromhex("00-01-0C-05-06-06-00-9C-34-00-00-96-37".replace("-", "")),
