@@ -62,7 +62,7 @@ def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
     if len(data) >= 2 and data[:2] == b"AT":
         LOGGER.debug("Ignoring ASCII status packet: %s", data)
         raise ValueError("status packet")
-
+        
     # Some shunts use an alternate header starting with ``b"BW\x01"``.
     # The next byte is the message type and the final byte is a parity/CRC.
     if data.startswith(b"BW\x01") and len(data) >= 6:
@@ -85,6 +85,7 @@ def parse_shunt_ble_packet(data: bytes) -> Dict[str, float | int | str]:
 
         LOGGER.error("Unsupported BW msg_type: 0x%02X", msg_type)
         raise ValueError(f"unsupported bw msg: 0x{msg_type:02X}")
+
 
     if len(data) < 4:
         LOGGER.error("Packet too short to parse: %s", data)
